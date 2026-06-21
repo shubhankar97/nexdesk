@@ -1,0 +1,31 @@
+---
+description: NexDesk tech stack and coding standards
+alwaysApply: true
+---
+
+# NexDesk Standards
+
+## Tech Stack
+
+- React
+- Vite
+- Node
+- Express
+- MongoDB
+- Material UI
+
+## Coding Standards
+
+- Use functional components
+- Use hooks
+- Use async await
+- Use service layer
+- Use repository pattern
+- Use reusable components
+- Use JWT Authentication
+- Use tenantId filtering
+
+## Change Scope
+
+- Never regenerate existing code.
+- Only modify requested files.
