@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import {
   Alert,
@@ -13,12 +13,17 @@ import AuthLayout from '../../components/auth/AuthLayout.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { ROLES, ROLE_LABELS } from '../../constants/roles.js';
 import * as authService from '../../services/auth.service.js';
+import { isTenantSubdomain } from '../../utils/subdomain.js';
 
-const LOGIN_ROLES = [ROLES.MASTER, ROLES.ADMIN, ROLES.CUSTOMER];
+const ALL_LOGIN_ROLES = [ROLES.MASTER, ROLES.ADMIN, ROLES.CUSTOMER];
 
 const LoginPage = () => {
   const navigate = useNavigate();
   const { login } = useAuth();
+  const loginRoles = useMemo(
+    () => (isTenantSubdomain() ? ALL_LOGIN_ROLES.filter((r) => r !== ROLES.MASTER) : ALL_LOGIN_ROLES),
+    []
+  );
   const [role, setRole] = useState(ROLES.CUSTOMER);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -27,6 +32,10 @@ const LoginPage = () => {
   const [loading, setLoading] = useState(false);
 
   const handleRoleChange = (_event, newRole) => {
+    if (!loginRoles.includes(newRole)) {
+      return;
+    }
+
     setRole(newRole);
     setError('');
     setFieldErrors({});
@@ -39,6 +48,11 @@ const LoginPage = () => {
     setLoading(true);
 
     try {
+      if (role === ROLES.MASTER && isTenantSubdomain()) {
+        setError('Master login is not available on tenant subdomains.');
+        return;
+      }
+
       const result = await authService.login(role, { email, password });
       login(result.accessToken, result.refreshToken, result.user);
       const homePath =
@@ -74,7 +88,7 @@ const LoginPage = () => {
         variant="fullWidth"
         sx={{ mb: 3 }}
       >
-        {LOGIN_ROLES.map((loginRole) => (
+        {loginRoles.map((loginRole) => (
           <Tab key={loginRole} label={ROLE_LABELS[loginRole]} value={loginRole} />
         ))}
       </Tabs>

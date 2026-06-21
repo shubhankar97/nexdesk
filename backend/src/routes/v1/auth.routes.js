@@ -1,11 +1,15 @@
 import { Router } from 'express';
 import * as authController from '../../controllers/auth.controller.js';
 import { authenticate } from '../../middleware/auth.js';
-import { enforceTenantAccess, requireTenant } from '../../middleware/tenant.js';
+import {
+  enforceTenantAccess,
+  requirePlatformHost,
+  requireTenant,
+} from '../../middleware/tenant.js';
 
 const router = Router();
 
-router.post('/master/login', authController.loginMaster);
+router.post('/master/login', requirePlatformHost, authController.loginMaster);
 router.post('/admin/login', requireTenant, authController.loginAdmin);
 router.post('/customer/login', requireTenant, authController.loginCustomer);
 

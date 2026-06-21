@@ -1,8 +1,9 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import { Box, CircularProgress } from '@mui/material';
 import ProtectedRoute from './ProtectedRoute.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { ROLES } from '../constants/roles.js';
+import { isTenantSubdomain } from '../utils/subdomain.js';
 import LoginPage from '../pages/auth/LoginPage.jsx';
 import ForgotPasswordPage from '../pages/auth/ForgotPasswordPage.jsx';
 import ResetPasswordPage from '../pages/auth/ResetPasswordPage.jsx';
@@ -27,8 +28,18 @@ import MasterCustomersPage from '../pages/master/CustomersPage.jsx';
 
 const getHomePath = (role) => {
   if (role === ROLES.CUSTOMER) return '/portal';
-  if (role === ROLES.MASTER) return '/master';
+  if (role === ROLES.MASTER) {
+    return isTenantSubdomain() ? null : '/master';
+  }
   return '/';
+};
+
+const PlatformOnlyRoute = () => {
+  if (isTenantSubdomain()) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return <Outlet />;
 };
 
 const AuthLoading = () => (
@@ -45,14 +56,23 @@ const AuthLoading = () => (
 );
 
 const PublicOnlyRoute = ({ children }) => {
-  const { isAuthenticated, initializing, user } = useAuth();
+  const { isAuthenticated, initializing, user, logout } = useAuth();
 
   if (initializing) {
     return <AuthLoading />;
   }
 
   if (isAuthenticated) {
-    return <Navigate to={getHomePath(user?.role)} replace />;
+    if (user?.role === ROLES.MASTER && isTenantSubdomain()) {
+      logout();
+      return children;
+    }
+
+    const homePath = getHomePath(user?.role);
+
+    if (homePath) {
+      return <Navigate to={homePath} replace />;
+    }
   }
 
   return children;
@@ -66,7 +86,7 @@ const AdminHomeRoute = () => {
   }
 
   if (user?.role === ROLES.MASTER) {
-    return <Navigate to="/master" replace />;
+    return <Navigate to={isTenantSubdomain() ? '/login' : '/master'} replace />;
   }
 
   return <DashboardPage />;
@@ -124,11 +144,13 @@ const AppRoutes = () => {
           <Route path="/portal/profile" element={<CustomerProfilePage />} />
         </Route>
 
-        <Route element={<MasterLayout />}>
-          <Route path="/master" element={<MasterDashboardPage />} />
-          <Route path="/master/tenants" element={<MasterTenantsPage />} />
-          <Route path="/master/admins" element={<MasterAdminsPage />} />
-          <Route path="/master/customers" element={<MasterCustomersPage />} />
+        <Route element={<PlatformOnlyRoute />}>
+          <Route element={<MasterLayout />}>
+            <Route path="/master" element={<MasterDashboardPage />} />
+            <Route path="/master/tenants" element={<MasterTenantsPage />} />
+            <Route path="/master/admins" element={<MasterAdminsPage />} />
+            <Route path="/master/customers" element={<MasterCustomersPage />} />
+          </Route>
         </Route>
       </Route>
     </Routes>

@@ -48,6 +48,14 @@ export const requireTenant = (req, _res, next) => {
   return next();
 };
 
+export const requirePlatformHost = (req, _res, next) => {
+  if (resolveSubdomain(req)) {
+    return next(new ApiError(403, 'This endpoint is not available on tenant subdomains'));
+  }
+
+  return next();
+};
+
 export const bindTenantContext = (req, _res, next) => {
   if (!req.tenantId) {
     return next();
