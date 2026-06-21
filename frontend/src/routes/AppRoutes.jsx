@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { ROLES } from '../constants/roles.js';
 import { isTenantSubdomain } from '../utils/subdomain.js';
 import LoginPage from '../pages/auth/LoginPage.jsx';
+import MasterLoginPage from '../pages/auth/MasterLoginPage.jsx';
 import ForgotPasswordPage from '../pages/auth/ForgotPasswordPage.jsx';
 import ResetPasswordPage from '../pages/auth/ResetPasswordPage.jsx';
 import AdminLayout from '../layouts/AdminLayout.jsx';
@@ -21,6 +22,8 @@ import CustomerOrdersPage from '../pages/customer/OrdersPage.jsx';
 import CustomerDocumentsPage from '../pages/customer/DocumentsPage.jsx';
 import CustomerNotificationsPage from '../pages/customer/NotificationsPage.jsx';
 import CustomerProfilePage from '../pages/customer/ProfilePage.jsx';
+import AdminProfilePage from '../pages/admin/ProfilePage.jsx';
+import MasterProfilePage from '../pages/master/ProfilePage.jsx';
 import MasterDashboardPage from '../pages/master/DashboardPage.jsx';
 import MasterTenantsPage from '../pages/master/TenantsPage.jsx';
 import MasterAdminsPage from '../pages/master/AdminsPage.jsx';
@@ -92,6 +95,24 @@ const AdminHomeRoute = () => {
   return <DashboardPage />;
 };
 
+const MasterShell = () => {
+  const { isAuthenticated, user, initializing } = useAuth();
+
+  if (initializing) {
+    return <AuthLoading />;
+  }
+
+  if (!isAuthenticated) {
+    return <MasterLoginPage />;
+  }
+
+  if (user?.role !== ROLES.MASTER) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return <MasterLayout />;
+};
+
 const AppRoutes = () => {
   const { initializing } = useAuth();
 
@@ -134,6 +155,7 @@ const AppRoutes = () => {
           <Route path="/reports" element={<ReportsPage />} />
           <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/profile" element={<AdminProfilePage />} />
         </Route>
 
         <Route element={<CustomerLayout />}>
@@ -143,14 +165,15 @@ const AppRoutes = () => {
           <Route path="/portal/notifications" element={<CustomerNotificationsPage />} />
           <Route path="/portal/profile" element={<CustomerProfilePage />} />
         </Route>
+      </Route>
 
-        <Route element={<PlatformOnlyRoute />}>
-          <Route element={<MasterLayout />}>
-            <Route path="/master" element={<MasterDashboardPage />} />
-            <Route path="/master/tenants" element={<MasterTenantsPage />} />
-            <Route path="/master/admins" element={<MasterAdminsPage />} />
-            <Route path="/master/customers" element={<MasterCustomersPage />} />
-          </Route>
+      <Route path="/master" element={<PlatformOnlyRoute />}>
+        <Route element={<MasterShell />}>
+          <Route index element={<MasterDashboardPage />} />
+          <Route path="tenants" element={<MasterTenantsPage />} />
+          <Route path="admins" element={<MasterAdminsPage />} />
+          <Route path="customers" element={<MasterCustomersPage />} />
+          <Route path="profile" element={<MasterProfilePage />} />
         </Route>
       </Route>
     </Routes>

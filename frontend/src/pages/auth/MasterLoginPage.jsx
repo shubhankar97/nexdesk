@@ -1,36 +1,19 @@
 import { useState } from 'react';
-import { Link as RouterLink, useNavigate } from 'react-router-dom';
-import {
-  Alert,
-  Box,
-  Button,
-  Link,
-  Tab,
-  Tabs,
-  TextField,
-} from '@mui/material';
+import { useNavigate } from 'react-router-dom';
+import { Alert, Box, Button, TextField } from '@mui/material';
 import AuthLayout from '../../components/auth/AuthLayout.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
-import { ROLES, ROLE_LABELS } from '../../constants/roles.js';
+import { ROLES } from '../../constants/roles.js';
 import * as authService from '../../services/auth.service.js';
 
-const LOGIN_ROLES = [ROLES.ADMIN, ROLES.CUSTOMER];
-
-const LoginPage = () => {
+const MasterLoginPage = () => {
   const navigate = useNavigate();
   const { login } = useAuth();
-  const [role, setRole] = useState(ROLES.CUSTOMER);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
   const [loading, setLoading] = useState(false);
-
-  const handleRoleChange = (_event, newRole) => {
-    setRole(newRole);
-    setError('');
-    setFieldErrors({});
-  };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -39,10 +22,9 @@ const LoginPage = () => {
     setLoading(true);
 
     try {
-      const result = await authService.login(role, { email, password });
+      const result = await authService.login(ROLES.MASTER, { email, password });
       login(result.accessToken, result.refreshToken, result.user);
-      const homePath = role === ROLES.CUSTOMER ? '/portal' : '/';
-      navigate(homePath, { replace: true });
+      navigate('/master', { replace: true });
     } catch (err) {
       const apiErrors = err.response?.data?.errors;
 
@@ -60,24 +42,8 @@ const LoginPage = () => {
     }
   };
 
-  const showForgotPassword = role === ROLES.ADMIN || role === ROLES.CUSTOMER;
-
   return (
-    <AuthLayout
-      title="Sign in to NexDesk"
-      subtitle={`${ROLE_LABELS[role]} login`}
-    >
-      <Tabs
-        value={role}
-        onChange={handleRoleChange}
-        variant="fullWidth"
-        sx={{ mb: 3 }}
-      >
-        {LOGIN_ROLES.map((loginRole) => (
-          <Tab key={loginRole} label={ROLE_LABELS[loginRole]} value={loginRole} />
-        ))}
-      </Tabs>
-
+    <AuthLayout title="Sign in to NexDesk" subtitle="Master login">
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
           {error}
@@ -114,14 +80,6 @@ const LoginPage = () => {
           helperText={fieldErrors.password}
         />
 
-        {showForgotPassword && (
-          <Box sx={{ textAlign: 'right', mt: 1 }}>
-            <Link component={RouterLink} to="/forgot-password" variant="body2">
-              Forgot password?
-            </Link>
-          </Box>
-        )}
-
         <Button
           type="submit"
           fullWidth
@@ -136,4 +94,4 @@ const LoginPage = () => {
   );
 };
 
-export default LoginPage;
+export default MasterLoginPage;

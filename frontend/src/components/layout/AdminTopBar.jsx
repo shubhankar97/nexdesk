@@ -1,23 +1,23 @@
 import MenuIcon from '@mui/icons-material/Menu';
 import {
   AppBar,
-  Avatar,
   Box,
   IconButton,
   Toolbar,
   Typography,
 } from '@mui/material';
 import { useAuth } from '../../context/AuthContext.jsx';
-import { ROLE_LABELS } from '../../constants/roles.js';
+import { PROFILE_PATHS, ROLE_LABELS } from '../../constants/roles.js';
 import ThemeToggle from '../common/ThemeToggle.jsx';
+import UserMenu from './UserMenu.jsx';
 import { DRAWER_WIDTH } from './AdminSidebar.jsx';
 
 const AdminTopBar = ({ onMenuClick }) => {
   const { user } = useAuth();
 
   const displayName = user?.name || user?.email || 'Admin';
-  const initials = displayName.charAt(0).toUpperCase();
   const roleLabel = ROLE_LABELS[user?.role] || user?.role || 'Admin';
+  const profilePath = PROFILE_PATHS[user?.role] || '/profile';
 
   return (
     <AppBar
@@ -53,9 +53,7 @@ const AdminTopBar = ({ onMenuClick }) => {
               {roleLabel}
             </Typography>
           </Box>
-          <Avatar sx={{ width: 36, height: 36, bgcolor: 'primary.main', fontSize: '0.95rem' }}>
-            {initials}
-          </Avatar>
+          <UserMenu profilePath={profilePath} />
         </Box>
       </Toolbar>
     </AppBar>
