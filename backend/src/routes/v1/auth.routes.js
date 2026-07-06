@@ -16,7 +16,7 @@ router.post('/customer/login', requireTenant, requireActiveTenant, authControlle
 
 router.post('/refresh', authController.refreshToken);
 router.post('/forgot-password', requireTenant, authController.forgotPassword);
-router.post('/reset-password', authController.resetPassword);
+router.post('/reset-password', requireTenant, authController.resetPassword);
 
 router.post('/logout', authenticate, enforceTenantAccess, authController.logout);
 router.get('/me', authenticate, enforceTenantAccess, authController.getMe);

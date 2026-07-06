@@ -30,7 +30,7 @@ export const getOrder = asyncHandler(async (req, res) => {
 
 export const createOrder = asyncHandler(async (req, res) => {
   const payload = validateCreateOrder(req.body);
-  const data = await orderService.createOrder(payload, req.tenantId);
+  const data = await orderService.createOrder(payload);
 
   res.status(201).json({
     success: true,

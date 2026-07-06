@@ -2,6 +2,15 @@ import { TENANT_HEADER } from '../../constants/tenant.js';
 import { TOKEN_KEY } from '../../features/auth/authConstants.js';
 import { getTenantSubdomain } from '../../utils/subdomain.js';
 
+const PLATFORM_AUTH_PATHS = [
+  '/auth/master/login',
+  '/auth/refresh',
+  '/plans',
+];
+
+const isPlatformAuthRequest = (url = '') =>
+  PLATFORM_AUTH_PATHS.some((path) => url.includes(path));
+
 export const attachAuthRequestInterceptor = (apiClient) => {
   apiClient.interceptors.request.use((config) => {
     const token = localStorage.getItem(TOKEN_KEY);
@@ -12,7 +21,7 @@ export const attachAuthRequestInterceptor = (apiClient) => {
 
     const tenantSubdomain = getTenantSubdomain();
 
-    if (tenantSubdomain) {
+    if (tenantSubdomain && !isPlatformAuthRequest(config.url)) {
       config.headers[TENANT_HEADER] = tenantSubdomain;
     }
 

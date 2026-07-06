@@ -21,8 +21,14 @@ export const isAllowedCorsOrigin = (origin) => {
       return true;
     }
 
-    if (env.rootDomain === 'localhost' && hostname.endsWith('.localhost')) {
-      return true;
+    if (env.rootDomain === 'localhost') {
+      if (hostname === 'localhost' || hostname === '127.0.0.1') {
+        return true;
+      }
+
+      if (hostname.endsWith('.localhost')) {
+        return true;
+      }
     }
   } catch {
     return false;

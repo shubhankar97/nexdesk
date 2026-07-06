@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import mongoose from 'mongoose';
 import { SUBSCRIPTION_STATUS } from '../constants/subscription.js';
 
-const tenantSchema = new mongoose.Schema(
+export const tenantSchema = new mongoose.Schema(
   {
     tenantId: {
       type: String,
@@ -65,5 +65,3 @@ tenantSchema.methods.toSafeObject = function toSafeObject() {
     updatedAt: this.updatedAt,
   };
 };
-
-export const Tenant = mongoose.model('Tenant', tenantSchema);

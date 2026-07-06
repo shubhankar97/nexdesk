@@ -1,5 +1,5 @@
 import { asyncHandler } from '../utils/asyncHandler.js';
-import { Tenant } from '../models/Tenant.js';
+import { getPlatformModels } from '../config/database.js';
 import * as subscriptionService from '../services/subscription.service.js';
 import {
   validateCreatePlan,
@@ -56,6 +56,7 @@ export const assignPlanToTenant = asyncHandler(async (req, res) => {
     throw new ApiError(400, 'Tenant ID is required');
   }
 
+  const { Tenant } = getPlatformModels();
   const tenant = await Tenant.findOne({ tenantId: tenantId.trim() });
 
   if (!tenant) {

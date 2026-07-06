@@ -1,11 +1,9 @@
 import dotenv from 'dotenv';
-import { connectDatabase } from '../src/config/database.js';
+import { connectDatabase, getPlatformModels } from '../src/config/database.js';
 import { computeOrderStatus } from '../src/constants/order.js';
 import { ROLES } from '../src/constants/roles.js';
 import { runWithTenantContext } from '../src/context/tenantContext.js';
-import { Order } from '../src/models/Order.js';
-import { Tenant } from '../src/models/Tenant.js';
-import { User } from '../src/models/User.js';
+import { getTenantModelsForTenant } from '../src/database/tenantConnection.js';
 
 dotenv.config();
 
@@ -16,14 +14,13 @@ const daysFromNow = (days) => {
   return date;
 };
 
-const buildOrderSeed = (customerId, tenantId) => [
+const buildOrderSeed = (customerId) => [
   {
     certificateName: 'SSL Certificate',
     issueDate: daysFromNow(-300),
     validity: daysFromNow(65),
     nextRenewal: daysFromNow(45),
     customer: customerId,
-    tenantId,
     currentCertificate: {
       fileName: 'ssl-certificate.pem',
       fileUrl: 'https://example.com/certs/ssl-certificate.pem',
@@ -36,7 +33,6 @@ const buildOrderSeed = (customerId, tenantId) => [
     validity: daysFromNow(120),
     nextRenewal: daysFromNow(20),
     customer: customerId,
-    tenantId,
     currentCertificate: {
       fileName: 'iso-9001-2025.pdf',
       fileUrl: 'https://example.com/certs/iso-9001-2025.pdf',
@@ -56,7 +52,6 @@ const buildOrderSeed = (customerId, tenantId) => [
     validity: daysFromNow(-45),
     nextRenewal: daysFromNow(-90),
     customer: customerId,
-    tenantId,
   },
   {
     certificateName: 'GDPR Compliance Certificate',
@@ -64,7 +59,6 @@ const buildOrderSeed = (customerId, tenantId) => [
     validity: daysFromNow(545),
     nextRenewal: daysFromNow(300),
     customer: customerId,
-    tenantId,
     currentCertificate: {
       fileName: 'gdpr-compliance.pdf',
       fileUrl: 'https://example.com/certs/gdpr-compliance.pdf',
@@ -77,13 +71,11 @@ const buildOrderSeed = (customerId, tenantId) => [
     validity: daysFromNow(305),
     nextRenewal: daysFromNow(14),
     customer: customerId,
-    tenantId,
   },
 ];
 
-const seedTenantOrders = async (tenant) => {
-  const customer = await User.findOne({
-    tenantId: tenant.tenantId,
+const seedTenantOrders = async (tenant, models) => {
+  const customer = await models.User.findOne({
     role: ROLES.CUSTOMER,
     isActive: true,
   });
@@ -93,11 +85,10 @@ const seedTenantOrders = async (tenant) => {
     return;
   }
 
-  const orders = buildOrderSeed(customer._id, tenant.tenantId);
+  const orders = buildOrderSeed(customer._id);
 
   for (const orderData of orders) {
-    const existing = await Order.findOne({
-      tenantId: tenant.tenantId,
+    const existing = await models.Order.findOne({
       certificateName: orderData.certificateName,
     });
 
@@ -108,7 +99,7 @@ const seedTenantOrders = async (tenant) => {
 
     const status = computeOrderStatus(orderData.validity, orderData.nextRenewal);
 
-    await Order.create({
+    await models.Order.create({
       ...orderData,
       status,
     });
@@ -119,6 +110,7 @@ const seedTenantOrders = async (tenant) => {
 
 const seed = async () => {
   await connectDatabase();
+  const { Tenant } = getPlatformModels();
 
   const tenants = await Tenant.find({ subdomain: { $in: ['abc', 'xyz'] } });
 
@@ -128,8 +120,11 @@ const seed = async () => {
   }
 
   for (const tenant of tenants) {
-    await runWithTenantContext({ tenant, tenantId: tenant.tenantId }, () =>
-      seedTenantOrders(tenant)
+    const { connection, models } = await getTenantModelsForTenant(tenant);
+
+    await runWithTenantContext(
+      { tenant, tenantId: tenant.tenantId, connection, models },
+      () => seedTenantOrders(tenant, models)
     );
   }
 

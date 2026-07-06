@@ -1,4 +1,5 @@
-import { Tenant } from '../models/Tenant.js';
+import { getTenantModelsForTenant } from '../database/tenantConnection.js';
+import { getPlatformModels } from '../database/platformModels.js';
 import { TENANT_HEADER } from '../constants/tenant.js';
 import { env } from '../config/env.js';
 import { runWithTenantContext } from '../context/tenantContext.js';
@@ -24,7 +25,8 @@ export const resolveTenant = async (req, _res, next) => {
       return next();
     }
 
-    const tenant = await Tenant.findOne({ subdomain });
+    const { Tenant: TenantModel } = getPlatformModels();
+    const tenant = await TenantModel.findOne({ subdomain });
 
     if (!tenant) {
       req.tenant = null;
@@ -66,7 +68,9 @@ export const requireActiveTenant = (req, _res, next) => {
 };
 
 export const requirePlatformHost = (req, _res, next) => {
-  if (resolveSubdomain(req)) {
+  const subdomain = extractSubdomain(req.headers.host, env.rootDomain, env.appSubdomain);
+
+  if (subdomain) {
     return next(new ApiError(403, 'This endpoint is not available on tenant subdomains'));
   }
 
@@ -74,11 +78,23 @@ export const requirePlatformHost = (req, _res, next) => {
 };
 
 export const bindTenantContext = (req, _res, next) => {
-  if (!req.tenantId) {
+  if (!req.tenantId || !req.tenant) {
     return next();
   }
 
-  return runWithTenantContext({ tenant: req.tenant, tenantId: req.tenantId }, () => next());
+  getTenantModelsForTenant(req.tenant)
+    .then(({ connection, models }) =>
+      runWithTenantContext(
+        {
+          tenant: req.tenant,
+          tenantId: req.tenantId,
+          connection,
+          models,
+        },
+        () => next()
+      )
+    )
+    .catch(next);
 };
 
 export const enforceTenantAccess = (req, _res, next) => {

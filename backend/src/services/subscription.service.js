@@ -1,5 +1,5 @@
 import { SUBSCRIPTION_STATUS } from '../constants/subscription.js';
-import { Tenant } from '../models/Tenant.js';
+import { getPlatformModels } from '../config/database.js';
 import { env } from '../config/env.js';
 import * as planRepository from '../repositories/plan.repository.js';
 import { ApiError } from '../utils/ApiError.js';
@@ -121,6 +121,7 @@ export const applySubscriptionFromPayment = async (payload) => {
     return null;
   }
 
+  const { Tenant } = getPlatformModels();
   const tenant = await Tenant.findOne({ tenantId });
 
   if (!tenant) {
@@ -169,6 +170,7 @@ export const applySubscriptionFromZion = async (payload) => {
     return null;
   }
 
+  const { Tenant } = getPlatformModels();
   const tenant = await Tenant.findOne({ tenantId });
 
   if (!tenant) {

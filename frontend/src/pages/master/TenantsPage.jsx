@@ -1,21 +1,19 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import {
+  Alert,
   Box,
   Button,
   Chip,
+  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
-  FormControl,
   FormControlLabel,
   IconButton,
-  InputLabel,
-  MenuItem,
-  Select,
   Switch,
   Table,
   TableBody,
@@ -29,38 +27,48 @@ import {
 } from '@mui/material';
 import AdminPage from '../../components/layout/AdminPage.jsx';
 import ConfirmDialog from '../../components/master/ConfirmDialog.jsx';
-import { useMasterData } from '../../context/MasterDataContext.jsx';
+import * as tenantService from '../../services/tenant.service.js';
 import { getTenantHost, getTenantZone } from '../../utils/subdomain.js';
 
 const emptyForm = {
   companyName: '',
   subdomain: '',
   isActive: true,
-  adminId: '',
 };
 
 const TenantsPage = () => {
-  const {
-    tenants,
-    getAdminById,
-    getCustomersByTenantId,
-    getUnassignedAdmins,
-    addTenant,
-    updateTenant,
-    deleteTenant,
-  } = useMasterData();
-
+  const [tenants, setTenants] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [formError, setFormError] = useState('');
+  const [saving, setSaving] = useState(false);
 
-  const adminOptions = useMemo(() => {
-    const unassigned = getUnassignedAdmins();
-    const currentAdmin = editingId ? getAdminById(tenants.find((t) => t.id === editingId)?.adminId) : null;
-    return currentAdmin ? [currentAdmin, ...unassigned.filter((a) => a.id !== currentAdmin.id)] : unassigned;
-  }, [editingId, getAdminById, getUnassignedAdmins, tenants]);
+  const loadTenants = useCallback(async () => {
+    setLoading(true);
+    setError('');
+
+    try {
+      const data = await tenantService.listTenants();
+      setTenants(data);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to load tenants.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadTenants();
+  }, [loadTenants]);
+
+  const sortedTenants = useMemo(
+    () => [...tenants].sort((a, b) => a.companyName.localeCompare(b.companyName)),
+    [tenants]
+  );
 
   const openCreateDialog = () => {
     setEditingId(null);
@@ -70,53 +78,59 @@ const TenantsPage = () => {
   };
 
   const openEditDialog = (tenant) => {
-    setEditingId(tenant.id);
+    setEditingId(tenant.tenantId);
     setForm({
       companyName: tenant.companyName,
       subdomain: tenant.subdomain,
       isActive: tenant.isActive,
-      adminId: tenant.adminId || '',
     });
     setFormError('');
     setDialogOpen(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!form.companyName.trim() || !form.subdomain.trim()) {
       setFormError('Company name and subdomain are required.');
       return;
     }
 
-    const subdomainTaken = tenants.some(
-      (tenant) =>
-        tenant.subdomain.toLowerCase() === form.subdomain.trim().toLowerCase() &&
-        tenant.id !== editingId
-    );
+    setSaving(true);
+    setFormError('');
 
-    if (subdomainTaken) {
-      setFormError('This subdomain is already in use.');
+    try {
+      if (editingId) {
+        await tenantService.updateTenant(editingId, {
+          companyName: form.companyName.trim(),
+          isActive: form.isActive,
+        });
+      } else {
+        await tenantService.createTenant({
+          companyName: form.companyName.trim(),
+          subdomain: form.subdomain.trim().toLowerCase(),
+          isActive: form.isActive,
+        });
+      }
+
+      setDialogOpen(false);
+      await loadTenants();
+    } catch (err) {
+      setFormError(err.response?.data?.message || 'Failed to save tenant.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) {
       return;
     }
 
-    const payload = {
-      companyName: form.companyName.trim(),
-      subdomain: form.subdomain.trim().toLowerCase(),
-      isActive: form.isActive,
-      adminId: form.adminId || null,
-    };
-
-    if (editingId) {
-      updateTenant(editingId, payload);
-    } else {
-      addTenant(payload);
-    }
-
-    setDialogOpen(false);
-  };
-
-  const handleDelete = () => {
-    if (deleteTarget) {
-      deleteTenant(deleteTarget.id);
+    try {
+      await tenantService.deleteTenant(deleteTarget.tenantId);
+      setDeleteTarget(null);
+      await loadTenants();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to delete tenant.');
       setDeleteTarget(null);
     }
   };
@@ -124,46 +138,51 @@ const TenantsPage = () => {
   return (
     <AdminPage
       title="Tenants"
-      description="Manage onboarded tenants. Each tenant is linked to one admin."
+      description="Manage onboarded tenants. Each tenant gets isolated users and orders in the database."
     >
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
+          {error}
+        </Alert>
+      )}
+
       <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
         <Button variant="contained" startIcon={<AddIcon />} onClick={openCreateDialog}>
           Add Tenant
         </Button>
       </Box>
 
-      <TableContainer>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>Company</TableCell>
-              <TableCell>Subdomain</TableCell>
-              <TableCell>Admin</TableCell>
-              <TableCell>Customers</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell align="right">Actions</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {tenants.length === 0 ? (
+      {loading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
+          <CircularProgress />
+        </Box>
+      ) : (
+        <TableContainer>
+          <Table>
+            <TableHead>
               <TableRow>
-                <TableCell colSpan={6}>
-                  <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 3 }}>
-                    No tenants yet. Add your first tenant to get started.
-                  </Typography>
-                </TableCell>
+                <TableCell>Company</TableCell>
+                <TableCell>Subdomain</TableCell>
+                <TableCell>Subscription</TableCell>
+                <TableCell>Status</TableCell>
+                <TableCell align="right">Actions</TableCell>
               </TableRow>
-            ) : (
-              tenants.map((tenant) => {
-                const admin = getAdminById(tenant.adminId);
-                const customerCount = getCustomersByTenantId(tenant.id).length;
-
-                return (
-                  <TableRow key={tenant.id} hover>
+            </TableHead>
+            <TableBody>
+              {sortedTenants.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5}>
+                    <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 3 }}>
+                      No tenants yet. Add your first tenant to get started.
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                sortedTenants.map((tenant) => (
+                  <TableRow key={tenant.tenantId} hover>
                     <TableCell>{tenant.companyName}</TableCell>
                     <TableCell>{getTenantHost(tenant.subdomain)}</TableCell>
-                    <TableCell>{admin ? `${admin.name} (${admin.email})` : '—'}</TableCell>
-                    <TableCell>{customerCount}</TableCell>
+                    <TableCell>{tenant.subscriptionStatus}</TableCell>
                     <TableCell>
                       <Chip
                         label={tenant.isActive ? 'Active' : 'Inactive'}
@@ -188,12 +207,12 @@ const TenantsPage = () => {
                       </Tooltip>
                     </TableCell>
                   </TableRow>
-                );
-              })
-            )}
-          </TableBody>
-        </Table>
-      </TableContainer>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
 
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{editingId ? 'Edit Tenant' : 'Add Tenant'}</DialogTitle>
@@ -212,28 +231,15 @@ const TenantsPage = () => {
             label="Subdomain"
             fullWidth
             required
+            disabled={Boolean(editingId)}
             value={form.subdomain}
             onChange={(event) => setForm((prev) => ({ ...prev, subdomain: event.target.value }))}
-            helperText={`Used as subdomain.${getTenantZone()}`}
+            helperText={
+              editingId
+                ? 'Subdomain cannot be changed after creation.'
+                : `Used as subdomain.${getTenantZone()}`
+            }
           />
-          <FormControl fullWidth margin="dense">
-            <InputLabel id="tenant-admin-label">Assigned Admin</InputLabel>
-            <Select
-              labelId="tenant-admin-label"
-              label="Assigned Admin"
-              value={form.adminId}
-              onChange={(event) => setForm((prev) => ({ ...prev, adminId: event.target.value }))}
-            >
-              <MenuItem value="">
-                <em>None</em>
-              </MenuItem>
-              {adminOptions.map((admin) => (
-                <MenuItem key={admin.id} value={admin.id}>
-                  {admin.name} ({admin.email})
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
           <FormControlLabel
             control={
               <Switch
@@ -251,9 +257,11 @@ const TenantsPage = () => {
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
-          <Button onClick={handleSave} variant="contained">
-            {editingId ? 'Save' : 'Add'}
+          <Button onClick={() => setDialogOpen(false)} disabled={saving}>
+            Cancel
+          </Button>
+          <Button onClick={handleSave} variant="contained" disabled={saving}>
+            {saving ? 'Saving...' : editingId ? 'Save' : 'Add'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -263,7 +271,7 @@ const TenantsPage = () => {
         title="Delete Tenant"
         message={
           deleteTarget
-            ? `Delete "${deleteTarget.companyName}"? This will remove all customers under this tenant and unlink its admin.`
+            ? `Delete "${deleteTarget.companyName}"? This will remove its database collections and all tenant data.`
             : ''
         }
         onClose={() => setDeleteTarget(null)}

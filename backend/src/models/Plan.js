@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import mongoose from 'mongoose';
 import { BILLING_INTERVAL } from '../constants/subscription.js';
 
-const planSchema = new mongoose.Schema(
+export const planSchema = new mongoose.Schema(
   {
     planId: {
       type: String,
@@ -82,4 +82,3 @@ planSchema.methods.toSafeObject = function toSafeObject() {
   };
 };
 
-export const Plan = mongoose.model('Plan', planSchema);

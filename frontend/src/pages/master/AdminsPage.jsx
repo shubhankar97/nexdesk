@@ -1,11 +1,13 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import {
+  Alert,
   Box,
   Button,
   Chip,
+  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
@@ -29,96 +31,124 @@ import {
 } from '@mui/material';
 import AdminPage from '../../components/layout/AdminPage.jsx';
 import ConfirmDialog from '../../components/master/ConfirmDialog.jsx';
-import { useMasterData } from '../../context/MasterDataContext.jsx';
+import * as adminService from '../../services/admin.service.js';
+import * as tenantService from '../../services/tenant.service.js';
 
 const emptyForm = {
-  name: '',
   email: '',
+  password: '',
   isActive: true,
   tenantId: '',
 };
 
 const AdminsPage = () => {
-  const {
-    admins,
-    tenants,
-    getTenantById,
-    getCustomersByTenantId,
-    getTenantsWithoutAdmin,
-    addAdmin,
-    updateAdmin,
-    deleteAdmin,
-  } = useMasterData();
-
+  const [admins, setAdmins] = useState([]);
+  const [tenants, setTenants] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
-  const [editingId, setEditingId] = useState(null);
+  const [editingAdmin, setEditingAdmin] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [formError, setFormError] = useState('');
+  const [saving, setSaving] = useState(false);
 
-  const tenantOptions = useMemo(() => {
-    const unassigned = getTenantsWithoutAdmin();
-    const currentTenant = editingId
-      ? tenants.find((tenant) => tenant.adminId === editingId)
-      : null;
-    return currentTenant
-      ? [currentTenant, ...unassigned.filter((tenant) => tenant.id !== currentTenant.id)]
-      : unassigned;
-  }, [editingId, getTenantsWithoutAdmin, tenants]);
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setError('');
+
+    try {
+      const [tenantData, adminData] = await Promise.all([
+        tenantService.listTenants(),
+        adminService.listAdmins(),
+      ]);
+      setTenants(tenantData);
+      setAdmins(adminData);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to load admins.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const openCreateDialog = () => {
-    setEditingId(null);
+    setEditingAdmin(null);
     setForm(emptyForm);
     setFormError('');
     setDialogOpen(true);
   };
 
   const openEditDialog = (admin) => {
-    setEditingId(admin.id);
+    setEditingAdmin(admin);
     setForm({
-      name: admin.name,
       email: admin.email,
+      password: '',
       isActive: admin.isActive,
-      tenantId: admin.tenantId || '',
+      tenantId: admin.tenantId,
     });
     setFormError('');
     setDialogOpen(true);
   };
 
-  const handleSave = () => {
-    if (!form.name.trim() || !form.email.trim()) {
-      setFormError('Name and email are required.');
+  const handleSave = async () => {
+    if (!form.email.trim() || !form.tenantId) {
+      setFormError('Email and tenant are required.');
       return;
     }
 
-    const emailTaken = admins.some(
-      (admin) => admin.email.toLowerCase() === form.email.trim().toLowerCase() && admin.id !== editingId
-    );
-
-    if (emailTaken) {
-      setFormError('This email is already in use.');
+    if (!editingAdmin && !form.password.trim()) {
+      setFormError('Password is required for new admins.');
       return;
     }
 
-    const payload = {
-      name: form.name.trim(),
-      email: form.email.trim().toLowerCase(),
-      isActive: form.isActive,
-      tenantId: form.tenantId || null,
-    };
+    setSaving(true);
+    setFormError('');
 
-    if (editingId) {
-      updateAdmin(editingId, payload);
-    } else {
-      addAdmin(payload);
+    try {
+      if (editingAdmin) {
+        const payload = {
+          email: form.email.trim().toLowerCase(),
+          isActive: form.isActive,
+        };
+
+        if (form.password.trim()) {
+          payload.password = form.password;
+        }
+
+        await adminService.updateAdmin(editingAdmin.tenantId, editingAdmin.id, payload);
+      } else {
+        await adminService.createAdmin({
+          tenantId: form.tenantId,
+          email: form.email.trim().toLowerCase(),
+          password: form.password,
+          isActive: form.isActive,
+        });
+      }
+
+      setDialogOpen(false);
+      await loadData();
+    } catch (err) {
+      setFormError(err.response?.data?.message || 'Failed to save admin.');
+    } finally {
+      setSaving(false);
     }
-
-    setDialogOpen(false);
   };
 
-  const handleDelete = () => {
-    if (deleteTarget) {
-      deleteAdmin(deleteTarget.id);
+  const handleDelete = async () => {
+    if (!deleteTarget) {
+      return;
+    }
+
+    try {
+      await adminService.deleteAdmin(deleteTarget.tenantId, deleteTarget.id);
+      setDeleteTarget(null);
+      await loadData();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to delete admin.');
       setDeleteTarget(null);
     }
   };
@@ -126,48 +156,60 @@ const AdminsPage = () => {
   return (
     <AdminPage
       title="Admins"
-      description="Manage tenant administrators. Each admin is linked to one tenant."
+      description="Manage tenant administrators. Each admin belongs to one tenant."
     >
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
+          {error}
+        </Alert>
+      )}
+
       <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={openCreateDialog}>
+        <Button
+          variant="contained"
+          startIcon={<AddIcon />}
+          onClick={openCreateDialog}
+          disabled={tenants.length === 0}
+        >
           Add Admin
         </Button>
       </Box>
 
-      <TableContainer>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>Name</TableCell>
-              <TableCell>Email</TableCell>
-              <TableCell>Tenant</TableCell>
-              <TableCell>Users</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell align="right">Actions</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {admins.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6}>
-                  <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 3 }}>
-                    No admins yet. Add an admin and assign them to a tenant.
-                  </Typography>
-                </TableCell>
-              </TableRow>
-            ) : (
-              admins.map((admin) => {
-                const tenant = getTenantById(admin.tenantId);
-                const userCount = admin.tenantId
-                  ? getCustomersByTenantId(admin.tenantId).length
-                  : 0;
+      {tenants.length === 0 && !loading && (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          Create a tenant first before adding admins.
+        </Alert>
+      )}
 
-                return (
-                  <TableRow key={admin.id} hover>
-                    <TableCell>{admin.name}</TableCell>
+      {loading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
+          <CircularProgress />
+        </Box>
+      ) : (
+        <TableContainer>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell>Email</TableCell>
+                <TableCell>Tenant</TableCell>
+                <TableCell>Status</TableCell>
+                <TableCell align="right">Actions</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {admins.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={4}>
+                    <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 3 }}>
+                      No admins yet. Add an admin and assign them to a tenant.
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                admins.map((admin) => (
+                  <TableRow key={`${admin.tenantId}-${admin.id}`} hover>
                     <TableCell>{admin.email}</TableCell>
-                    <TableCell>{tenant ? tenant.companyName : '—'}</TableCell>
-                    <TableCell>{userCount}</TableCell>
+                    <TableCell>{admin.tenantName || '—'}</TableCell>
                     <TableCell>
                       <Chip
                         label={admin.isActive ? 'Active' : 'Inactive'}
@@ -192,26 +234,34 @@ const AdminsPage = () => {
                       </Tooltip>
                     </TableCell>
                   </TableRow>
-                );
-              })
-            )}
-          </TableBody>
-        </Table>
-      </TableContainer>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
 
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>{editingId ? 'Edit Admin' : 'Add Admin'}</DialogTitle>
+        <DialogTitle>{editingAdmin ? 'Edit Admin' : 'Add Admin'}</DialogTitle>
         <DialogContent>
+          <FormControl fullWidth margin="dense" required>
+            <InputLabel id="admin-tenant-label">Assigned Tenant</InputLabel>
+            <Select
+              labelId="admin-tenant-label"
+              label="Assigned Tenant"
+              value={form.tenantId}
+              disabled={Boolean(editingAdmin)}
+              onChange={(event) => setForm((prev) => ({ ...prev, tenantId: event.target.value }))}
+            >
+              {tenants.map((tenant) => (
+                <MenuItem key={tenant.tenantId} value={tenant.tenantId}>
+                  {tenant.companyName}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
           <TextField
             autoFocus
-            margin="dense"
-            label="Name"
-            fullWidth
-            required
-            value={form.name}
-            onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
-          />
-          <TextField
             margin="dense"
             label="Email"
             type="email"
@@ -220,24 +270,16 @@ const AdminsPage = () => {
             value={form.email}
             onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))}
           />
-          <FormControl fullWidth margin="dense">
-            <InputLabel id="admin-tenant-label">Assigned Tenant</InputLabel>
-            <Select
-              labelId="admin-tenant-label"
-              label="Assigned Tenant"
-              value={form.tenantId}
-              onChange={(event) => setForm((prev) => ({ ...prev, tenantId: event.target.value }))}
-            >
-              <MenuItem value="">
-                <em>None</em>
-              </MenuItem>
-              {tenantOptions.map((tenant) => (
-                <MenuItem key={tenant.id} value={tenant.id}>
-                  {tenant.companyName}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+          <TextField
+            margin="dense"
+            label={editingAdmin ? 'New Password (optional)' : 'Password'}
+            type="password"
+            fullWidth
+            required={!editingAdmin}
+            value={form.password}
+            onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
+            helperText={editingAdmin ? 'Leave blank to keep current password' : 'Minimum 8 characters'}
+          />
           <FormControlLabel
             control={
               <Switch
@@ -255,9 +297,11 @@ const AdminsPage = () => {
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
-          <Button onClick={handleSave} variant="contained">
-            {editingId ? 'Save' : 'Add'}
+          <Button onClick={() => setDialogOpen(false)} disabled={saving}>
+            Cancel
+          </Button>
+          <Button onClick={handleSave} variant="contained" disabled={saving}>
+            {saving ? 'Saving...' : editingAdmin ? 'Save' : 'Add'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -266,9 +310,7 @@ const AdminsPage = () => {
         open={Boolean(deleteTarget)}
         title="Delete Admin"
         message={
-          deleteTarget
-            ? `Delete "${deleteTarget.name}"? This will unlink them from their tenant.`
-            : ''
+          deleteTarget ? `Delete "${deleteTarget.email}"? This cannot be undone.` : ''
         }
         onClose={() => setDeleteTarget(null)}
         onConfirm={handleDelete}

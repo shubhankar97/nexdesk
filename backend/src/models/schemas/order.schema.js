@@ -1,6 +1,5 @@
 import mongoose from 'mongoose';
-import { computeOrderStatus } from '../constants/order.js';
-import { tenantPlugin } from '../plugins/tenantPlugin.js';
+import { computeOrderStatus } from '../../constants/order.js';
 
 const certificateVersionSchema = new mongoose.Schema(
   {
@@ -22,7 +21,7 @@ const certificateVersionSchema = new mongoose.Schema(
   { _id: true }
 );
 
-const orderSchema = new mongoose.Schema(
+export const orderSchema = new mongoose.Schema(
   {
     certificateName: {
       type: String,
@@ -64,10 +63,8 @@ const orderSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-orderSchema.plugin(tenantPlugin);
-
-orderSchema.index({ customer: 1, tenantId: 1 });
-orderSchema.index({ certificateName: 1, tenantId: 1 });
+orderSchema.index({ customer: 1 });
+orderSchema.index({ certificateName: 1 });
 
 orderSchema.pre('validate', function updateStatus(next) {
   if (this.validity && this.nextRenewal) {
@@ -77,7 +74,7 @@ orderSchema.pre('validate', function updateStatus(next) {
   next();
 });
 
-orderSchema.methods.toSafeObject = function toSafeObject() {
+orderSchema.methods.toSafeObject = function toSafeObject(tenantId = null) {
   return {
     id: this._id,
     certificateName: this.certificateName,
@@ -99,10 +96,8 @@ orderSchema.methods.toSafeObject = function toSafeObject() {
       fileUrl: version.fileUrl,
       uploadedAt: version.uploadedAt,
     })),
-    tenantId: this.tenantId,
+    tenantId,
     createdAt: this.createdAt,
     updatedAt: this.updatedAt,
   };
 };
-
-export const Order = mongoose.model('Order', orderSchema);

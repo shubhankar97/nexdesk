@@ -1,7 +1,6 @@
 import dotenv from 'dotenv';
-import { connectDatabase } from '../src/config/database.js';
+import { connectDatabase, getPlatformModels } from '../src/config/database.js';
 import { BILLING_INTERVAL } from '../src/constants/subscription.js';
-import { Plan } from '../src/models/Plan.js';
 
 dotenv.config();
 
@@ -40,6 +39,7 @@ const seedPlans = [
 
 const seed = async () => {
   await connectDatabase();
+  const { Plan } = getPlatformModels();
 
   for (const planData of seedPlans) {
     const existing = await Plan.findOne({ slug: planData.slug });

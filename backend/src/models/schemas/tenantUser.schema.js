@@ -1,13 +1,15 @@
 import bcrypt from 'bcryptjs';
 import mongoose from 'mongoose';
-import { ROLES } from '../constants/roles.js';
-import { tenantPlugin } from '../plugins/tenantPlugin.js';
+import { ROLES } from '../../constants/roles.js';
 
-const userSchema = new mongoose.Schema(
+const TENANT_ROLES = [ROLES.ADMIN, ROLES.CUSTOMER];
+
+export const tenantUserSchema = new mongoose.Schema(
   {
     email: {
       type: String,
       required: true,
+      unique: true,
       lowercase: true,
       trim: true,
     },
@@ -18,7 +20,7 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: Object.values(ROLES),
+      enum: TENANT_ROLES,
       required: true,
     },
     isActive: {
@@ -41,15 +43,7 @@ const userSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-userSchema.plugin(tenantPlugin, { required: false });
-
-userSchema.path('tenantId').required(function requireTenantForNonMaster() {
-  return this.role !== ROLES.MASTER;
-});
-
-userSchema.index({ email: 1, tenantId: 1 }, { unique: true });
-
-userSchema.pre('save', async function hashPassword(next) {
+tenantUserSchema.pre('save', async function hashPassword(next) {
   if (!this.isModified('password')) {
     return next();
   }
@@ -58,20 +52,18 @@ userSchema.pre('save', async function hashPassword(next) {
   next();
 });
 
-userSchema.methods.comparePassword = function comparePassword(candidate) {
+tenantUserSchema.methods.comparePassword = function comparePassword(candidate) {
   return bcrypt.compare(candidate, this.password);
 };
 
-userSchema.methods.toSafeObject = function toSafeObject() {
+tenantUserSchema.methods.toSafeObject = function toSafeObject(tenantId = null) {
   return {
     id: this._id,
     email: this.email,
     role: this.role,
-    tenantId: this.tenantId ?? null,
+    tenantId,
     isActive: this.isActive,
     createdAt: this.createdAt,
     updatedAt: this.updatedAt,
   };
 };
-
-export const User = mongoose.model('User', userSchema);

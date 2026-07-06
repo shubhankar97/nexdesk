@@ -5,8 +5,18 @@ import { env } from './config/env.js';
 const start = async () => {
   await connectDatabase();
 
-  app.listen(env.port, () => {
+  const server = app.listen(env.port, () => {
     console.log(`Server running on port ${env.port} [${env.nodeEnv}]`);
+  });
+
+  server.on('error', (error) => {
+    if (error.code === 'EADDRINUSE') {
+      console.error(`Port ${env.port} is already in use. Stop the other process and retry.`);
+    } else {
+      console.error('Server error:', error);
+    }
+
+    process.exit(1);
   });
 };
 

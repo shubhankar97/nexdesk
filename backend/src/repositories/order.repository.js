@@ -1,12 +1,36 @@
-import { Order } from '../models/Order.js';
+import { getTenantModels } from '../context/tenantContext.js';
 
-export const findOrders = (filter) =>
-  Order.find(filter).populate('customer', 'email').sort({ createdAt: -1 });
+const requireTenantModels = () => {
+  const models = getTenantModels();
 
-export const findOrderById = (id) => Order.findById(id).populate('customer', 'email');
+  if (!models) {
+    throw new Error('Tenant context required');
+  }
 
-export const findOrderDocumentById = (id) => Order.findById(id);
+  return models;
+};
 
-export const createOrder = (data) => Order.create(data);
+export const findOrders = (filter) => {
+  const { Order } = requireTenantModels();
+  return Order.find(filter).populate('customer', 'email').sort({ createdAt: -1 });
+};
 
-export const deleteOrderById = (id) => Order.findByIdAndDelete(id);
+export const findOrderById = (id) => {
+  const { Order } = requireTenantModels();
+  return Order.findById(id).populate('customer', 'email');
+};
+
+export const findOrderDocumentById = (id) => {
+  const { Order } = requireTenantModels();
+  return Order.findById(id);
+};
+
+export const createOrder = (data) => {
+  const { Order } = requireTenantModels();
+  return Order.create(data);
+};
+
+export const deleteOrderById = (id) => {
+  const { Order } = requireTenantModels();
+  return Order.findByIdAndDelete(id);
+};

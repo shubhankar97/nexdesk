@@ -1,9 +1,9 @@
 import dotenv from 'dotenv';
-import { connectDatabase } from '../src/config/database.js';
+import { connectDatabase, getPlatformModels } from '../src/config/database.js';
+import { provisionTenantCollections } from '../src/database/tenantConnection.js';
 import { env } from '../src/config/env.js';
 import { SUBSCRIPTION_STATUS } from '../src/constants/subscription.js';
-import { Plan } from '../src/models/Plan.js';
-import { Tenant } from '../src/models/Tenant.js';
+import { getTenantCollections } from '../src/utils/tenantCollections.js';
 import { getTenantHost } from '../src/utils/subdomain.js';
 
 dotenv.config();
@@ -23,6 +23,7 @@ const addYear = (date) => new Date(date.getTime() + 365 * 24 * 60 * 60 * 1000);
 
 const seed = async () => {
   await connectDatabase();
+  const { Plan, Tenant } = getPlatformModels();
 
   const starterPlan = await Plan.findOne({ slug: 'starter', isActive: true });
 
@@ -37,6 +38,10 @@ const seed = async () => {
     const existing = await Tenant.findOne({ subdomain: tenantData.subdomain });
 
     if (existing) {
+      await provisionTenantCollections(existing);
+      const collections = getTenantCollections(existing.subdomain);
+      console.log(`Provisioned tenant collections: ${collections.users}, ${collections.orders}`);
+
       if (!existing.planId) {
         existing.planId = starterPlan.planId;
         existing.subscriptionStatus = SUBSCRIPTION_STATUS.ACTIVE;
@@ -58,8 +63,11 @@ const seed = async () => {
       currentPeriodEnd: addYear(now),
     });
 
+    await provisionTenantCollections(tenant);
+    const collections = getTenantCollections(tenant.subdomain);
+
     console.log(
-      `Created tenant: ${getTenantHost(tenant.subdomain, env.rootDomain, env.appSubdomain)} (${tenant.companyName}) [${tenant.tenantId}]`
+      `Created tenant: ${getTenantHost(tenant.subdomain, env.rootDomain, env.appSubdomain)} (${tenant.companyName}) [${tenant.tenantId}] → nexdesk.${collections.users}, nexdesk.${collections.orders}`
     );
   }
 

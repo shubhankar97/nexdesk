@@ -1,7 +1,7 @@
 import { ROLES } from '../constants/roles.js';
 import { computeOrderStatus } from '../constants/order.js';
+import { getTenantId, getTenantModels } from '../context/tenantContext.js';
 import * as orderRepository from '../repositories/order.repository.js';
-import { User } from '../models/User.js';
 import { ApiError } from '../utils/ApiError.js';
 
 const formatCustomer = (customer) =>
@@ -10,7 +10,7 @@ const formatCustomer = (customer) =>
     : customer;
 
 const formatOrder = (order) => ({
-  ...order.toSafeObject(),
+  ...order.toSafeObject(getTenantId()),
   customer: formatCustomer(order.customer),
 });
 
@@ -21,7 +21,17 @@ const assertOrderAccess = (order, user) => {
 };
 
 const validateCustomer = async (customerId) => {
-  const customer = await User.findOne({ _id: customerId, role: ROLES.CUSTOMER, isActive: true });
+  const models = getTenantModels();
+
+  if (!models) {
+    throw new ApiError(400, 'Tenant context required');
+  }
+
+  const customer = await models.User.findOne({
+    _id: customerId,
+    role: ROLES.CUSTOMER,
+    isActive: true,
+  });
 
   if (!customer) {
     throw new ApiError(400, 'Invalid customer');
@@ -31,7 +41,13 @@ const validateCustomer = async (customerId) => {
 };
 
 export const listOrderCustomers = async () => {
-  const customers = await User.find({ role: ROLES.CUSTOMER, isActive: true })
+  const models = getTenantModels();
+
+  if (!models) {
+    throw new ApiError(400, 'Tenant context required');
+  }
+
+  const customers = await models.User.find({ role: ROLES.CUSTOMER, isActive: true })
     .select('email')
     .sort({ email: 1 });
 
@@ -63,8 +79,8 @@ export const getOrderById = async (id, user) => {
   return formatOrder(order);
 };
 
-export const createOrder = async (payload, tenantId) => {
-  if (!tenantId) {
+export const createOrder = async (payload) => {
+  if (!getTenantId()) {
     throw new ApiError(400, 'Tenant context required');
   }
 
@@ -72,7 +88,6 @@ export const createOrder = async (payload, tenantId) => {
 
   const order = await orderRepository.createOrder({
     ...payload,
-    tenantId,
     status: computeOrderStatus(payload.validity, payload.nextRenewal),
   });
   const populated = await orderRepository.findOrderById(order._id);
@@ -136,7 +151,7 @@ export const uploadCertificate = async (id, fileData) => {
   };
 
   await order.save();
-  return order.toSafeObject();
+  return order.toSafeObject(getTenantId());
 };
 
 export const downloadCertificate = async (id, user) => {

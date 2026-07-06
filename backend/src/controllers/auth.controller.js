@@ -48,7 +48,7 @@ export const refreshToken = asyncHandler(async (req, res) => {
 });
 
 export const logout = asyncHandler(async (req, res) => {
-  await authService.logout(req.user.sub);
+  await authService.logout(req.user.sub, req.user.tenantId ?? null);
 
   res.status(200).json({
     success: true,
@@ -57,7 +57,7 @@ export const logout = asyncHandler(async (req, res) => {
 });
 
 export const getMe = asyncHandler(async (req, res) => {
-  const user = await authService.getCurrentUser(req.user.sub);
+  const user = await authService.getCurrentUser(req.user.sub, req.user.tenantId ?? null);
 
   res.status(200).json({
     success: true,
