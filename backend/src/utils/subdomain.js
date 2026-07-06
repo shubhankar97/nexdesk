@@ -1,36 +1,37 @@
 import { PLATFORM_SUBDOMAINS } from '../constants/tenant.js';
 
+export const getTenantZone = (rootDomain, appSubdomain) => `${appSubdomain}.${rootDomain}`;
+
+export const getTenantHost = (tenantSubdomain, rootDomain, appSubdomain) =>
+  `${tenantSubdomain}.${getTenantZone(rootDomain, appSubdomain)}`;
+
 /**
  * Extract tenant subdomain from Host header.
- * Examples: abc.coregent.com -> abc, abc.localhost -> abc
+ * Examples: abc.nexdesk.localhost -> abc, abc.nexdesk.worzest.com -> abc
  */
-export const extractSubdomain = (host, baseDomain) => {
-  if (!host) {
+export const extractSubdomain = (host, rootDomain, appSubdomain) => {
+  if (!host || !rootDomain || !appSubdomain) {
     return null;
   }
 
   const hostname = host.split(':')[0].toLowerCase();
+  const tenantZone = getTenantZone(rootDomain, appSubdomain);
 
-  if (hostname === 'localhost' || hostname === baseDomain) {
+  if (hostname === rootDomain || hostname === tenantZone) {
     return null;
   }
 
-  if (hostname.endsWith('.localhost')) {
-    const subdomain = hostname.slice(0, -'.localhost'.length);
-    return subdomain && !PLATFORM_SUBDOMAINS.includes(subdomain) ? subdomain : null;
+  const tenantSuffix = `.${tenantZone}`;
+
+  if (!hostname.endsWith(tenantSuffix)) {
+    return null;
   }
 
-  if (baseDomain && hostname.endsWith(`.${baseDomain}`)) {
-    const subdomain = hostname.slice(0, -(baseDomain.length + 1));
-    return subdomain && !PLATFORM_SUBDOMAINS.includes(subdomain) ? subdomain : null;
+  const subdomain = hostname.slice(0, -tenantSuffix.length);
+
+  if (!subdomain || PLATFORM_SUBDOMAINS.includes(subdomain)) {
+    return null;
   }
 
-  const parts = hostname.split('.');
-
-  if (parts.length >= 3) {
-    const subdomain = parts[0];
-    return PLATFORM_SUBDOMAINS.includes(subdomain) ? null : subdomain;
-  }
-
-  return null;
+  return subdomain;
 };

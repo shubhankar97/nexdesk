@@ -30,6 +30,7 @@ import {
 import AdminPage from '../../components/layout/AdminPage.jsx';
 import ConfirmDialog from '../../components/master/ConfirmDialog.jsx';
 import { useMasterData } from '../../context/MasterDataContext.jsx';
+import { getTenantHost, getTenantZone } from '../../utils/subdomain.js';
 
 const emptyForm = {
   companyName: '',
@@ -160,7 +161,7 @@ const TenantsPage = () => {
                 return (
                   <TableRow key={tenant.id} hover>
                     <TableCell>{tenant.companyName}</TableCell>
-                    <TableCell>{tenant.subdomain}.coregent.com</TableCell>
+                    <TableCell>{getTenantHost(tenant.subdomain)}</TableCell>
                     <TableCell>{admin ? `${admin.name} (${admin.email})` : '—'}</TableCell>
                     <TableCell>{customerCount}</TableCell>
                     <TableCell>
@@ -213,7 +214,7 @@ const TenantsPage = () => {
             required
             value={form.subdomain}
             onChange={(event) => setForm((prev) => ({ ...prev, subdomain: event.target.value }))}
-            helperText="Used as subdomain.coregent.com"
+            helperText={`Used as subdomain.${getTenantZone()}`}
           />
           <FormControl fullWidth margin="dense">
             <InputLabel id="tenant-admin-label">Assigned Admin</InputLabel>

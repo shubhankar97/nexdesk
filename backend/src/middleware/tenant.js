@@ -1,16 +1,17 @@
 import { Tenant } from '../models/Tenant.js';
 import { TENANT_HEADER } from '../constants/tenant.js';
 import { env } from '../config/env.js';
-import { getTenantContext, runWithTenantContext } from '../context/tenantContext.js';
+import { runWithTenantContext } from '../context/tenantContext.js';
 import { extractSubdomain } from '../utils/subdomain.js';
 import { ApiError } from '../utils/ApiError.js';
+import { isSubscriptionExpired } from '../utils/subscription.js';
 
 const resolveSubdomain = (req) => {
   if (env.allowTenantHeader && req.headers[TENANT_HEADER]) {
     return String(req.headers[TENANT_HEADER]).toLowerCase().trim();
   }
 
-  return extractSubdomain(req.headers.host, env.baseDomain);
+  return extractSubdomain(req.headers.host, env.rootDomain, env.appSubdomain);
 };
 
 export const resolveTenant = async (req, _res, next) => {
@@ -23,7 +24,7 @@ export const resolveTenant = async (req, _res, next) => {
       return next();
     }
 
-    const tenant = await Tenant.findOne({ subdomain, isActive: true });
+    const tenant = await Tenant.findOne({ subdomain });
 
     if (!tenant) {
       req.tenant = null;
@@ -48,6 +49,22 @@ export const requireTenant = (req, _res, next) => {
   return next();
 };
 
+export const requireActiveTenant = (req, _res, next) => {
+  if (!req.tenant) {
+    return next(new ApiError(400, 'Valid tenant subdomain is required'));
+  }
+
+  if (!req.tenant.isActive) {
+    return next(new ApiError(403, 'Tenant account is deactivated'));
+  }
+
+  if (isSubscriptionExpired(req.tenant)) {
+    return next(new ApiError(402, 'Subscription expired'));
+  }
+
+  return next();
+};
+
 export const requirePlatformHost = (req, _res, next) => {
   if (resolveSubdomain(req)) {
     return next(new ApiError(403, 'This endpoint is not available on tenant subdomains'));
@@ -61,16 +78,7 @@ export const bindTenantContext = (req, _res, next) => {
     return next();
   }
 
-  const existingContext = getTenantContext();
-
-  if (existingContext?.tenantId === req.tenantId) {
-    return next();
-  }
-
-  return runWithTenantContext(
-    { tenant: req.tenant, tenantId: req.tenantId },
-    () => next()
-  );
+  return runWithTenantContext({ tenant: req.tenant, tenantId: req.tenantId }, () => next());
 };
 
 export const enforceTenantAccess = (req, _res, next) => {

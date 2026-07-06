@@ -1,15 +1,17 @@
 import dotenv from 'dotenv';
 import { connectDatabase } from '../src/config/database.js';
+import { env } from '../src/config/env.js';
 import { ROLES } from '../src/constants/roles.js';
 import { Tenant } from '../src/models/Tenant.js';
 import { User } from '../src/models/User.js';
+import { getTenantHost } from '../src/utils/subdomain.js';
 
 dotenv.config();
 
 const seed = async () => {
   await connectDatabase();
 
-  const masterEmail = process.env.SEED_MASTER_EMAIL || 'master@nexdesk.com';
+  const masterEmail = process.env.SEED_MASTER_EMAIL || 'master@worzest.com';
   const existingMaster = await User.findOne({ email: masterEmail, role: ROLES.MASTER });
 
   if (existingMaster) {
@@ -31,8 +33,8 @@ const seed = async () => {
   }
 
   for (const tenant of tenants) {
-    const adminEmail = `admin@${tenant.subdomain}.coregent.com`;
-    const customerEmail = `customer@${tenant.subdomain}.coregent.com`;
+    const tenantHost = getTenantHost(tenant.subdomain, env.rootDomain, env.appSubdomain);
+    const adminEmail = `admin@${tenantHost}`;
 
     const existingAdmin = await User.findOne({ email: adminEmail, tenantId: tenant.tenantId });
 
@@ -48,21 +50,30 @@ const seed = async () => {
       console.log(`Created ${ROLES.ADMIN} for ${tenant.subdomain}: ${adminEmail}`);
     }
 
-    const existingCustomer = await User.findOne({
-      email: customerEmail,
-      tenantId: tenant.tenantId,
-    });
+    const customerSeeds = [
+      { email: `customer@${tenantHost}` },
+      { email: `alice@${tenantHost}` },
+      { email: `bob@${tenantHost}` },
+    ];
 
-    if (existingCustomer) {
-      console.log(`Skipped ${ROLES.CUSTOMER}: ${customerEmail} already exists`);
-    } else {
+    for (const { email } of customerSeeds) {
+      const existingCustomer = await User.findOne({
+        email,
+        tenantId: tenant.tenantId,
+      });
+
+      if (existingCustomer) {
+        console.log(`Skipped ${ROLES.CUSTOMER}: ${email} already exists`);
+        continue;
+      }
+
       await User.create({
-        email: customerEmail,
+        email,
         password: process.env.SEED_CUSTOMER_PASSWORD || 'Customer123!',
         role: ROLES.CUSTOMER,
         tenantId: tenant.tenantId,
       });
-      console.log(`Created ${ROLES.CUSTOMER} for ${tenant.subdomain}: ${customerEmail}`);
+      console.log(`Created ${ROLES.CUSTOMER} for ${tenant.subdomain}: ${email}`);
     }
   }
 

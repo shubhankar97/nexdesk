@@ -1,11 +1,8 @@
-import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
-import { Box, CircularProgress } from '@mui/material';
-import ProtectedRoute from './ProtectedRoute.jsx';
-import { useAuth } from '../context/AuthContext.jsx';
+import { Navigate, Route, Routes } from 'react-router-dom';
 import { ROLES } from '../constants/roles.js';
+import { useAuth } from '../hooks/useAuth.js';
 import { isTenantSubdomain } from '../utils/subdomain.js';
 import LoginPage from '../pages/auth/LoginPage.jsx';
-import MasterLoginPage from '../pages/auth/MasterLoginPage.jsx';
 import ForgotPasswordPage from '../pages/auth/ForgotPasswordPage.jsx';
 import ResetPasswordPage from '../pages/auth/ResetPasswordPage.jsx';
 import AdminLayout from '../layouts/AdminLayout.jsx';
@@ -28,58 +25,9 @@ import MasterDashboardPage from '../pages/master/DashboardPage.jsx';
 import MasterTenantsPage from '../pages/master/TenantsPage.jsx';
 import MasterAdminsPage from '../pages/master/AdminsPage.jsx';
 import MasterCustomersPage from '../pages/master/CustomersPage.jsx';
-
-const getHomePath = (role) => {
-  if (role === ROLES.CUSTOMER) return '/portal';
-  if (role === ROLES.MASTER) {
-    return isTenantSubdomain() ? null : '/master';
-  }
-  return '/';
-};
-
-const PlatformOnlyRoute = () => {
-  if (isTenantSubdomain()) {
-    return <Navigate to="/login" replace />;
-  }
-
-  return <Outlet />;
-};
-
-const AuthLoading = () => (
-  <Box
-    sx={{
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-    }}
-  >
-    <CircularProgress />
-  </Box>
-);
-
-const PublicOnlyRoute = ({ children }) => {
-  const { isAuthenticated, initializing, user, logout } = useAuth();
-
-  if (initializing) {
-    return <AuthLoading />;
-  }
-
-  if (isAuthenticated) {
-    if (user?.role === ROLES.MASTER && isTenantSubdomain()) {
-      logout();
-      return children;
-    }
-
-    const homePath = getHomePath(user?.role);
-
-    if (homePath) {
-      return <Navigate to={homePath} replace />;
-    }
-  }
-
-  return children;
-};
+import MasterLoginPage from '../pages/auth/MasterLoginPage.jsx';
+import ProtectedRoute from './ProtectedRoute.jsx';
+import { AuthLoading, GuestRoute, TenantRoute } from './guards/index.js';
 
 const AdminHomeRoute = () => {
   const { user } = useAuth();
@@ -125,25 +73,25 @@ const AppRoutes = () => {
       <Route
         path="/login"
         element={
-          <PublicOnlyRoute>
+          <GuestRoute>
             <LoginPage />
-          </PublicOnlyRoute>
+          </GuestRoute>
         }
       />
       <Route
         path="/forgot-password"
         element={
-          <PublicOnlyRoute>
+          <GuestRoute>
             <ForgotPasswordPage />
-          </PublicOnlyRoute>
+          </GuestRoute>
         }
       />
       <Route
         path="/reset-password"
         element={
-          <PublicOnlyRoute>
+          <GuestRoute>
             <ResetPasswordPage />
-          </PublicOnlyRoute>
+          </GuestRoute>
         }
       />
 
@@ -167,7 +115,7 @@ const AppRoutes = () => {
         </Route>
       </Route>
 
-      <Route path="/master" element={<PlatformOnlyRoute />}>
+      <Route path="/master" element={<TenantRoute requirePlatform />}>
         <Route element={<MasterShell />}>
           <Route index element={<MasterDashboardPage />} />
           <Route path="tenants" element={<MasterTenantsPage />} />

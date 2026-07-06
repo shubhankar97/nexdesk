@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import { getTenantHost } from '../utils/subdomain.js';
 
 const MasterDataContext = createContext(null);
 
@@ -23,14 +24,14 @@ const initialAdmins = [
   {
     id: 'admin-abc',
     name: 'ABC Admin',
-    email: 'admin@abc.coregent.com',
+    email: `admin@${getTenantHost('abc')}`,
     tenantId: 'tenant-abc',
     isActive: true,
   },
   {
     id: 'admin-xyz',
     name: 'XYZ Admin',
-    email: 'admin@xyz.coregent.com',
+    email: `admin@${getTenantHost('xyz')}`,
     tenantId: 'tenant-xyz',
     isActive: true,
   },
@@ -40,14 +41,14 @@ const initialCustomers = [
   {
     id: 'customer-abc',
     name: 'ABC Customer',
-    email: 'customer@abc.coregent.com',
+    email: `customer@${getTenantHost('abc')}`,
     tenantId: 'tenant-abc',
     isActive: true,
   },
   {
     id: 'customer-xyz',
     name: 'XYZ Customer',
-    email: 'customer@xyz.coregent.com',
+    email: `customer@${getTenantHost('xyz')}`,
     tenantId: 'tenant-xyz',
     isActive: true,
   },

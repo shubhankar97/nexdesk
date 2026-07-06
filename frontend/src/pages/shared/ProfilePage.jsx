@@ -1,6 +1,6 @@
 import { Box, Chip, Divider, Typography } from '@mui/material';
 import AdminPage from '../../components/layout/AdminPage.jsx';
-import { useAuth } from '../../context/AuthContext.jsx';
+import { useAuth } from '../../hooks/useAuth.js';
 import { ROLE_LABELS } from '../../constants/roles.js';
 
 const formatDate = (value) => {

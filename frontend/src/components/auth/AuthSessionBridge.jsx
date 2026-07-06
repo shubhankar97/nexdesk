@@ -1,18 +1,6 @@
-import { useEffect } from 'react';
-import { useAuth } from '../../context/AuthContext.jsx';
+// Auth session is managed via Redux (features/auth) and api/interceptors.
+// This component is kept for backward compatibility with existing imports.
 
-const AuthSessionBridge = () => {
-  const { refreshSession } = useAuth();
-
-  useEffect(() => {
-    window.__nexdeskRefreshSession = refreshSession;
-
-    return () => {
-      delete window.__nexdeskRefreshSession;
-    };
-  }, [refreshSession]);
-
-  return null;
-};
+const AuthSessionBridge = () => null;
 
 export default AuthSessionBridge;

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Alert, Box, Button, TextField } from '@mui/material';
 import AuthLayout from '../../components/auth/AuthLayout.jsx';
-import { useAuth } from '../../context/AuthContext.jsx';
+import { useAuth } from '../../hooks/useAuth.js';
 import { ROLES } from '../../constants/roles.js';
 import * as authService from '../../services/auth.service.js';
 

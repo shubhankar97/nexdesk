@@ -1,39 +1,48 @@
 import { PLATFORM_SUBDOMAINS } from '../constants/tenant.js';
 import { env } from '../config/env.js';
 
+export const getTenantZone = (rootDomain = env.rootDomain, appSubdomain = env.appSubdomain) =>
+  `${appSubdomain}.${rootDomain}`;
+
+export const getTenantHost = (
+  tenantSubdomain,
+  rootDomain = env.rootDomain,
+  appSubdomain = env.appSubdomain
+) => `${tenantSubdomain}.${getTenantZone(rootDomain, appSubdomain)}`;
+
 /**
  * Extract tenant subdomain from hostname.
- * Examples: abc.coregent.com -> abc, abc.localhost -> abc
+ * Examples: abc.nexdesk.localhost -> abc, abc.nexdesk.worzest.com -> abc
  */
-export const extractSubdomain = (hostname, baseDomain = env.baseDomain) => {
-  if (!hostname) {
+export const extractSubdomain = (
+  hostname,
+  rootDomain = env.rootDomain,
+  appSubdomain = env.appSubdomain
+) => {
+  if (!hostname || !rootDomain || !appSubdomain) {
     return null;
   }
 
   const host = hostname.toLowerCase();
+  const tenantZone = getTenantZone(rootDomain, appSubdomain);
 
-  if (host === 'localhost' || host === baseDomain) {
+  if (host === rootDomain || host === tenantZone) {
     return null;
   }
 
-  if (host.endsWith('.localhost')) {
-    const subdomain = host.slice(0, -'.localhost'.length);
-    return subdomain && !PLATFORM_SUBDOMAINS.includes(subdomain) ? subdomain : null;
+  const tenantSuffix = `.${tenantZone}`;
+
+  if (!host.endsWith(tenantSuffix)) {
+    return null;
   }
 
-  if (baseDomain && host.endsWith(`.${baseDomain}`)) {
-    const subdomain = host.slice(0, -(baseDomain.length + 1));
-    return subdomain && !PLATFORM_SUBDOMAINS.includes(subdomain) ? subdomain : null;
+  const subdomain = host.slice(0, -tenantSuffix.length);
+
+  if (!subdomain || PLATFORM_SUBDOMAINS.includes(subdomain)) {
+    return null;
   }
 
-  const parts = host.split('.');
-
-  if (parts.length >= 3) {
-    const subdomain = parts[0];
-    return PLATFORM_SUBDOMAINS.includes(subdomain) ? null : subdomain;
-  }
-
-  return null;
+  return subdomain;
 };
 
 export const getTenantSubdomain = () => {

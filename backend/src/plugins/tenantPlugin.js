@@ -44,7 +44,7 @@ export const tenantPlugin = (schema, options = {}) => {
 
   schema.pre(['updateOne', 'updateMany', 'deleteOne', 'deleteMany'], writeMiddleware);
 
-  schema.pre('save', function assignTenantOnSave(next) {
+  schema.pre('validate', function assignTenantOnValidate(next) {
     if (this.tenantId) {
       return next();
     }

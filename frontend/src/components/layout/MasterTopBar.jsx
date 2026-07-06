@@ -6,7 +6,7 @@ import {
   Toolbar,
   Typography,
 } from '@mui/material';
-import { useAuth } from '../../context/AuthContext.jsx';
+import { useAuth } from '../../hooks/useAuth.js';
 import { PROFILE_PATHS, ROLE_LABELS } from '../../constants/roles.js';
 import ThemeToggle from '../common/ThemeToggle.jsx';
 import UserMenu from './UserMenu.jsx';

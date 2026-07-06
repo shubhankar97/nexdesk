@@ -10,7 +10,7 @@ import {
   TextField,
 } from '@mui/material';
 import AuthLayout from '../../components/auth/AuthLayout.jsx';
-import { useAuth } from '../../context/AuthContext.jsx';
+import { useAuth } from '../../hooks/useAuth.js';
 import { ROLES, ROLE_LABELS } from '../../constants/roles.js';
 import * as authService from '../../services/auth.service.js';
 

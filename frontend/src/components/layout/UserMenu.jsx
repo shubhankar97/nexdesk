@@ -13,7 +13,7 @@ import {
   MenuItem,
   Typography,
 } from '@mui/material';
-import { useAuth } from '../../context/AuthContext.jsx';
+import { useAuth } from '../../hooks/useAuth.js';
 import { getLoginPath, ROLE_LABELS } from '../../constants/roles.js';
 
 const UserMenu = ({ profilePath }) => {
