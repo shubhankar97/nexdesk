@@ -3,6 +3,27 @@ import { ApiError } from '../utils/ApiError.js';
 
 const isValidInterval = (value) => Object.values(BILLING_INTERVAL).includes(value);
 
+const normalizePlanLimits = (limits) => {
+  if (limits == null) {
+    return { documentAi: { uploadsPerMonth: null } };
+  }
+
+  if (typeof limits !== 'object' || Array.isArray(limits)) {
+    throw new ApiError(400, 'Plan limits must be an object');
+  }
+
+  const uploads = limits?.documentAi?.uploadsPerMonth;
+
+  return {
+    documentAi: {
+      uploadsPerMonth:
+        uploads === null || uploads === undefined || uploads === ''
+          ? null
+          : Number(uploads),
+    },
+  };
+};
+
 export const validatePlanId = (input) => {
   const planId = input?.planId ?? input;
 
@@ -14,7 +35,7 @@ export const validatePlanId = (input) => {
 };
 
 export const validateCreatePlan = (body) => {
-  const { name, slug, description, price, currency, interval, trialDays, features, payuPlanId } =
+  const { name, slug, description, price, currency, interval, trialDays, features, limits, payuPlanId } =
     body ?? {};
 
   if (!name?.trim()) {
@@ -33,7 +54,7 @@ export const validateCreatePlan = (body) => {
     throw new ApiError(400, 'Valid billing interval is required');
   }
 
-  return {
+  const payload = {
     name: name.trim(),
     slug: slug.trim().toLowerCase(),
     description: description?.trim() ?? '',
@@ -44,6 +65,12 @@ export const validateCreatePlan = (body) => {
     features: Array.isArray(features) ? features.map(String) : [],
     payuPlanId: payuPlanId?.trim() || null,
   };
+
+  if (limits !== undefined) {
+    payload.limits = normalizePlanLimits(limits);
+  }
+
+  return payload;
 };
 
 export const validateUpdatePlan = (body) => {
@@ -80,6 +107,10 @@ export const validateUpdatePlan = (body) => {
 
   if (body.features !== undefined) {
     payload.features = Array.isArray(body.features) ? body.features.map(String) : [];
+  }
+
+  if (body.limits !== undefined) {
+    payload.limits = normalizePlanLimits(body.limits);
   }
 
   if (body.payuPlanId !== undefined) {

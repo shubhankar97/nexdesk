@@ -33,4 +33,5 @@ export const env = {
   payuSuccessUrl: process.env.PAYU_SUCCESS_URL || 'http://localhost:5173/billing/success',
   payuFailureUrl: process.env.PAYU_FAILURE_URL || 'http://localhost:5173/billing/failure',
   billingEmailDomain: process.env.BILLING_EMAIL_DOMAIN || 'nexdesk.local',
+  ocrServiceUrl: (process.env.OCR_SERVICE_URL || 'http://127.0.0.1:5100').replace(/\/$/, ''),
 };

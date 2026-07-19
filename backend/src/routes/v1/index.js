@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import adminRoutes from './admin.routes.js';
 import authRoutes from './auth.routes.js';
+import documentRoutes from './document.routes.js';
 import healthRoutes from './health.routes.js';
 import orderRoutes from './order.routes.js';
 import planRoutes from './plan.routes.js';
@@ -14,6 +15,7 @@ router.use('/tenant', tenantRoutes);
 router.use('/auth', authRoutes);
 router.use('/admins', adminRoutes);
 router.use('/orders', orderRoutes);
+router.use('/documents', documentRoutes);
 router.use('/plans', planRoutes);
 router.use('/subscription', subscriptionRoutes);
 

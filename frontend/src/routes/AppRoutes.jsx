@@ -1,10 +1,12 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
+import { MODULES } from '../constants/modules.js';
 import { ROLES } from '../constants/roles.js';
 import { useAuth } from '../hooks/useAuth.js';
 import { isTenantSubdomain } from '../utils/subdomain.js';
 import LoginPage from '../pages/auth/LoginPage.jsx';
 import ForgotPasswordPage from '../pages/auth/ForgotPasswordPage.jsx';
 import ResetPasswordPage from '../pages/auth/ResetPasswordPage.jsx';
+import UnauthorizedPage from '../pages/UnauthorizedPage.jsx';
 import AdminLayout from '../layouts/AdminLayout.jsx';
 import CustomerLayout from '../layouts/CustomerLayout.jsx';
 import MasterLayout from '../layouts/MasterLayout.jsx';
@@ -12,6 +14,7 @@ import DashboardPage from '../pages/admin/DashboardPage.jsx';
 import OrdersPage from '../pages/admin/OrdersPage.jsx';
 import CustomersPage from '../pages/admin/CustomersPage.jsx';
 import ReportsPage from '../pages/admin/ReportsPage.jsx';
+import DocumentAiPage from '../pages/admin/DocumentAiPage.jsx';
 import NotificationsPage from '../pages/admin/NotificationsPage.jsx';
 import SettingsPage from '../pages/admin/SettingsPage.jsx';
 import CustomerDashboardPage from '../pages/customer/DashboardPage.jsx';
@@ -25,9 +28,10 @@ import MasterDashboardPage from '../pages/master/DashboardPage.jsx';
 import MasterTenantsPage from '../pages/master/TenantsPage.jsx';
 import MasterAdminsPage from '../pages/master/AdminsPage.jsx';
 import MasterCustomersPage from '../pages/master/CustomersPage.jsx';
+import MasterDocumentAiPage from '../pages/master/DocumentAiPage.jsx';
 import MasterLoginPage from '../pages/auth/MasterLoginPage.jsx';
 import ProtectedRoute from './ProtectedRoute.jsx';
-import { AuthLoading, GuestRoute, TenantRoute } from './guards/index.js';
+import { AuthLoading, GuestRoute, ModuleRoute, RoleRoute, TenantRoute } from './guards/index.js';
 
 const AdminHomeRoute = () => {
   const { user } = useAuth();
@@ -94,6 +98,7 @@ const AppRoutes = () => {
           </GuestRoute>
         }
       />
+      <Route path="/unauthorized" element={<UnauthorizedPage />} />
 
       <Route element={<ProtectedRoute />}>
         <Route element={<AdminLayout />}>
@@ -101,6 +106,11 @@ const AppRoutes = () => {
           <Route path="/orders" element={<OrdersPage />} />
           <Route path="/customers" element={<CustomersPage />} />
           <Route path="/reports" element={<ReportsPage />} />
+          <Route element={<RoleRoute allowedRoles={[ROLES.ADMIN]} />}>
+            <Route element={<ModuleRoute module={MODULES.DOCUMENT_AI} />}>
+              <Route path="/document-ai" element={<DocumentAiPage />} />
+            </Route>
+          </Route>
           <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/profile" element={<AdminProfilePage />} />
@@ -121,6 +131,7 @@ const AppRoutes = () => {
           <Route path="tenants" element={<MasterTenantsPage />} />
           <Route path="admins" element={<MasterAdminsPage />} />
           <Route path="customers" element={<MasterCustomersPage />} />
+          <Route path="document-ai" element={<MasterDocumentAiPage />} />
           <Route path="profile" element={<MasterProfilePage />} />
         </Route>
       </Route>

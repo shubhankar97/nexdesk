@@ -12,8 +12,34 @@ export const validateTenantId = (input) => {
   return { tenantId: tenantId.trim() };
 };
 
+const parseDocumentAiAddons = (addons) => {
+  if (addons === undefined) {
+    return undefined;
+  }
+
+  if (addons === null || typeof addons !== 'object' || Array.isArray(addons)) {
+    throw new ApiError(400, 'Addons must be an object');
+  }
+
+  const payload = {};
+
+  if (addons.documentAi !== undefined) {
+    payload.documentAi = Boolean(addons.documentAi);
+  }
+
+  if (addons.documentAiPlanOverride !== undefined) {
+    payload.documentAiPlanOverride = Boolean(addons.documentAiPlanOverride);
+  }
+
+  if (!Object.keys(payload).length) {
+    return undefined;
+  }
+
+  return payload;
+};
+
 export const validateCreateTenant = (body) => {
-  const { companyName, subdomain, isActive } = body ?? {};
+  const { companyName, subdomain, isActive, addons } = body ?? {};
 
   if (!companyName?.trim()) {
     throw new ApiError(400, 'Company name is required');
@@ -29,15 +55,23 @@ export const validateCreateTenant = (body) => {
     throw new ApiError(400, 'Subdomain must be lowercase alphanumeric with optional hyphens');
   }
 
-  return {
+  const payload = {
     companyName: companyName.trim(),
     subdomain: normalizedSubdomain,
     isActive: isActive !== false,
   };
+
+  const documentAiAddons = parseDocumentAiAddons(addons);
+
+  if (documentAiAddons !== undefined) {
+    payload.addons = documentAiAddons;
+  }
+
+  return payload;
 };
 
 export const validateUpdateTenant = (body) => {
-  const { companyName, isActive } = body ?? {};
+  const { companyName, isActive, addons } = body ?? {};
   const payload = {};
 
   if (companyName !== undefined) {
@@ -50,6 +84,12 @@ export const validateUpdateTenant = (body) => {
 
   if (isActive !== undefined) {
     payload.isActive = Boolean(isActive);
+  }
+
+  const documentAiAddons = parseDocumentAiAddons(addons);
+
+  if (documentAiAddons !== undefined) {
+    payload.addons = documentAiAddons;
   }
 
   if (!Object.keys(payload).length) {

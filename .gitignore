@@ -4,3 +4,5 @@ node_modules/
 *.log
 .DS_Store
 dist/
+ocr-service/.venv/
+ocr-service/__pycache__/

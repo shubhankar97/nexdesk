@@ -47,6 +47,16 @@ export const tenantSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    addons: {
+      documentAi: {
+        type: Boolean,
+        default: false,
+      },
+      documentAiPlanOverride: {
+        type: Boolean,
+        default: false,
+      },
+    },
   },
   { timestamps: true }
 );
@@ -61,6 +71,10 @@ tenantSchema.methods.toSafeObject = function toSafeObject() {
     subscriptionStatus: this.subscriptionStatus,
     currentPeriodStart: this.currentPeriodStart,
     currentPeriodEnd: this.currentPeriodEnd,
+    addons: {
+      documentAi: Boolean(this.addons?.documentAi),
+      documentAiPlanOverride: Boolean(this.addons?.documentAiPlanOverride),
+    },
     createdAt: this.createdAt,
     updatedAt: this.updatedAt,
   };

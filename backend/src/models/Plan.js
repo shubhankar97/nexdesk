@@ -52,6 +52,15 @@ export const planSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
+    limits: {
+      documentAi: {
+        uploadsPerMonth: {
+          type: Number,
+          default: null,
+          min: 0,
+        },
+      },
+    },
     payuPlanId: {
       type: String,
       trim: true,
@@ -76,6 +85,14 @@ planSchema.methods.toSafeObject = function toSafeObject() {
     interval: this.interval,
     trialDays: this.trialDays,
     features: this.features,
+    limits: {
+      documentAi: {
+        uploadsPerMonth:
+          this.limits?.documentAi?.uploadsPerMonth === undefined
+            ? null
+            : this.limits.documentAi.uploadsPerMonth,
+      },
+    },
     isActive: this.isActive,
     createdAt: this.createdAt,
     updatedAt: this.updatedAt,

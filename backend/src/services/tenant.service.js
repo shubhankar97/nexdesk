@@ -36,7 +36,29 @@ export const createTenant = async (payload) => {
 };
 
 export const updateTenant = async (tenantId, payload) => {
-  const tenant = await tenantRepository.updateTenantById(tenantId, payload);
+  const $set = {};
+
+  if (payload.companyName !== undefined) {
+    $set.companyName = payload.companyName;
+  }
+
+  if (payload.isActive !== undefined) {
+    $set.isActive = payload.isActive;
+  }
+
+  if (payload.addons?.documentAi !== undefined) {
+    $set['addons.documentAi'] = payload.addons.documentAi;
+  }
+
+  if (payload.addons?.documentAiPlanOverride !== undefined) {
+    $set['addons.documentAiPlanOverride'] = payload.addons.documentAiPlanOverride;
+  }
+
+  if (!Object.keys($set).length) {
+    throw new ApiError(400, 'No valid fields to update');
+  }
+
+  const tenant = await tenantRepository.updateTenantById(tenantId, { $set });
 
   if (!tenant) {
     throw new ApiError(404, 'Tenant not found');

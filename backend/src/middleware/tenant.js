@@ -97,6 +97,32 @@ export const bindTenantContext = (req, _res, next) => {
     .catch(next);
 };
 
+/**
+ * Re-binds tenant ALS after async middleware (e.g. multer) that resumes outside
+ * the original bindTenantContext scope.
+ */
+export const rebindTenantContext = async (req, _res, next) => {
+  if (!req.tenantId || !req.tenant) {
+    return next();
+  }
+
+  try {
+    const { connection, models } = await getTenantModelsForTenant(req.tenant);
+
+    return runWithTenantContext(
+      {
+        tenant: req.tenant,
+        tenantId: req.tenantId,
+        connection,
+        models,
+      },
+      () => next()
+    );
+  } catch (error) {
+    return next(error);
+  }
+};
+
 export const enforceTenantAccess = (req, _res, next) => {
   if (!req.user?.tenantId) {
     return next();

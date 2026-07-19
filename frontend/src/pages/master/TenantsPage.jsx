@@ -34,6 +34,8 @@ const emptyForm = {
   companyName: '',
   subdomain: '',
   isActive: true,
+  documentAi: false,
+  documentAiPlanOverride: false,
 };
 
 const TenantsPage = () => {
@@ -83,6 +85,8 @@ const TenantsPage = () => {
       companyName: tenant.companyName,
       subdomain: tenant.subdomain,
       isActive: tenant.isActive,
+      documentAi: Boolean(tenant.addons?.documentAi),
+      documentAiPlanOverride: Boolean(tenant.addons?.documentAiPlanOverride),
     });
     setFormError('');
     setDialogOpen(true);
@@ -102,12 +106,20 @@ const TenantsPage = () => {
         await tenantService.updateTenant(editingId, {
           companyName: form.companyName.trim(),
           isActive: form.isActive,
+          addons: {
+            documentAi: form.documentAi,
+            documentAiPlanOverride: form.documentAiPlanOverride,
+          },
         });
       } else {
         await tenantService.createTenant({
           companyName: form.companyName.trim(),
           subdomain: form.subdomain.trim().toLowerCase(),
           isActive: form.isActive,
+          addons: {
+            documentAi: form.documentAi,
+            documentAiPlanOverride: form.documentAiPlanOverride,
+          },
         });
       }
 
@@ -164,6 +176,7 @@ const TenantsPage = () => {
                 <TableCell>Company</TableCell>
                 <TableCell>Subdomain</TableCell>
                 <TableCell>Subscription</TableCell>
+                <TableCell>Document AI</TableCell>
                 <TableCell>Status</TableCell>
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
@@ -171,7 +184,7 @@ const TenantsPage = () => {
             <TableBody>
               {sortedTenants.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5}>
+                  <TableCell colSpan={6}>
                     <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 3 }}>
                       No tenants yet. Add your first tenant to get started.
                     </Typography>
@@ -183,6 +196,14 @@ const TenantsPage = () => {
                     <TableCell>{tenant.companyName}</TableCell>
                     <TableCell>{getTenantHost(tenant.subdomain)}</TableCell>
                     <TableCell>{tenant.subscriptionStatus}</TableCell>
+                    <TableCell>
+                      <Chip
+                        label={tenant.addons?.documentAi ? 'Enabled' : 'Off'}
+                        color={tenant.addons?.documentAi ? 'primary' : 'default'}
+                        size="small"
+                        variant={tenant.addons?.documentAi ? 'filled' : 'outlined'}
+                      />
+                    </TableCell>
                     <TableCell>
                       <Chip
                         label={tenant.isActive ? 'Active' : 'Inactive'}
@@ -249,6 +270,33 @@ const TenantsPage = () => {
             }
             label="Active"
             sx={{ mt: 1 }}
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={form.documentAi}
+                onChange={(event) =>
+                  setForm((prev) => ({ ...prev, documentAi: event.target.checked }))
+                }
+              />
+            }
+            label="Document AI add-on"
+            sx={{ mt: 0.5 }}
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={form.documentAiPlanOverride}
+                onChange={(event) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    documentAiPlanOverride: event.target.checked,
+                  }))
+                }
+              />
+            }
+            label="Bypass plan feature (Master override)"
+            sx={{ mt: 0.5 }}
           />
           {formError && (
             <Typography variant="body2" color="error" sx={{ mt: 1 }}>

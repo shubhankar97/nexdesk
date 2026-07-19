@@ -10,6 +10,11 @@ export const getTenant = async (tenantId) => {
   return data.data;
 };
 
+export const getCurrentTenant = async () => {
+  const { data } = await apiClient.get('/tenant/current');
+  return data.data;
+};
+
 export const createTenant = async (payload) => {
   const { data } = await apiClient.post('/tenant', payload);
   return data.data;

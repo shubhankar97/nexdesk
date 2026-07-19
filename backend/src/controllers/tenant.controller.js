@@ -1,5 +1,6 @@
 import { asyncHandler } from '../utils/asyncHandler.js';
 import * as tenantService from '../services/tenant.service.js';
+import * as usageService from '../services/usage.service.js';
 import {
   validateCreateTenant,
   validateTenantId,
@@ -7,9 +8,11 @@ import {
 } from '../validators/tenant.validator.js';
 
 export const getCurrentTenant = asyncHandler(async (req, res) => {
+  const data = await usageService.enrichTenantWithPlan(req.tenant);
+
   res.status(200).json({
     success: true,
-    data: req.tenant.toSafeObject(),
+    data,
   });
 });
 

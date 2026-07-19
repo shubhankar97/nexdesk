@@ -24,16 +24,18 @@ export const provisionTenantCollections = async (tenant) => {
   await Promise.all([
     models.User.createCollection(),
     models.Order.createCollection(),
+    models.Document.createCollection(),
   ]);
 };
 
 export const dropTenantCollections = async (subdomain) => {
   const connection = getPlatformConnection();
-  const { users, orders } = getTenantCollections(subdomain);
+  const { users, orders, documents } = getTenantCollections(subdomain);
 
   await Promise.allSettled([
     connection.dropCollection(users),
     connection.dropCollection(orders),
+    connection.dropCollection(documents),
   ]);
 
   tenantModelCache.delete(subdomain);
