@@ -11,13 +11,15 @@ const requireTenantModels = () => {
 };
 
 export const findOrders = (filter) => {
-  const { Order } = requireTenantModels();
-  return Order.find(filter).populate('customer', 'email').sort({ createdAt: -1 });
+  const { Order, User } = requireTenantModels();
+  return Order.find(filter)
+    .populate({ path: 'customer', model: User, select: 'email' })
+    .sort({ createdAt: -1 });
 };
 
 export const findOrderById = (id) => {
-  const { Order } = requireTenantModels();
-  return Order.findById(id).populate('customer', 'email');
+  const { Order, User } = requireTenantModels();
+  return Order.findById(id).populate({ path: 'customer', model: User, select: 'email' });
 };
 
 export const findOrderDocumentById = (id) => {

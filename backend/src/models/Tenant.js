@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import mongoose from 'mongoose';
+import { formatTenantAddons } from '../constants/modules.js';
 import { SUBSCRIPTION_STATUS } from '../constants/subscription.js';
 
 export const tenantSchema = new mongoose.Schema(
@@ -56,6 +57,30 @@ export const tenantSchema = new mongoose.Schema(
         type: Boolean,
         default: false,
       },
+      orders: {
+        type: Boolean,
+        default: true,
+      },
+      customers: {
+        type: Boolean,
+        default: true,
+      },
+      reports: {
+        type: Boolean,
+        default: true,
+      },
+      notifications: {
+        type: Boolean,
+        default: true,
+      },
+      settings: {
+        type: Boolean,
+        default: true,
+      },
+      customerDocuments: {
+        type: Boolean,
+        default: true,
+      },
     },
   },
   { timestamps: true }
@@ -71,10 +96,7 @@ tenantSchema.methods.toSafeObject = function toSafeObject() {
     subscriptionStatus: this.subscriptionStatus,
     currentPeriodStart: this.currentPeriodStart,
     currentPeriodEnd: this.currentPeriodEnd,
-    addons: {
-      documentAi: Boolean(this.addons?.documentAi),
-      documentAiPlanOverride: Boolean(this.addons?.documentAiPlanOverride),
-    },
+    addons: formatTenantAddons(this.addons),
     createdAt: this.createdAt,
     updatedAt: this.updatedAt,
   };

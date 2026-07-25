@@ -103,24 +103,40 @@ const AppRoutes = () => {
       <Route element={<ProtectedRoute />}>
         <Route element={<AdminLayout />}>
           <Route path="/" element={<AdminHomeRoute />} />
-          <Route path="/orders" element={<OrdersPage />} />
-          <Route path="/customers" element={<CustomersPage />} />
-          <Route path="/reports" element={<ReportsPage />} />
+          <Route element={<ModuleRoute module={MODULES.ORDERS} />}>
+            <Route path="/orders" element={<OrdersPage />} />
+          </Route>
+          <Route element={<ModuleRoute module={MODULES.CUSTOMERS} />}>
+            <Route path="/customers" element={<CustomersPage />} />
+          </Route>
+          <Route element={<ModuleRoute module={MODULES.REPORTS} />}>
+            <Route path="/reports" element={<ReportsPage />} />
+          </Route>
           <Route element={<RoleRoute allowedRoles={[ROLES.ADMIN]} />}>
             <Route element={<ModuleRoute module={MODULES.DOCUMENT_AI} />}>
               <Route path="/document-ai" element={<DocumentAiPage />} />
             </Route>
           </Route>
-          <Route path="/notifications" element={<NotificationsPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
+          <Route element={<ModuleRoute module={MODULES.NOTIFICATIONS} />}>
+            <Route path="/notifications" element={<NotificationsPage />} />
+          </Route>
+          <Route element={<ModuleRoute module={MODULES.SETTINGS} />}>
+            <Route path="/settings" element={<SettingsPage />} />
+          </Route>
           <Route path="/profile" element={<AdminProfilePage />} />
         </Route>
 
         <Route element={<CustomerLayout />}>
           <Route path="/portal" element={<CustomerDashboardPage />} />
-          <Route path="/portal/orders" element={<CustomerOrdersPage />} />
-          <Route path="/portal/documents" element={<CustomerDocumentsPage />} />
-          <Route path="/portal/notifications" element={<CustomerNotificationsPage />} />
+          <Route element={<ModuleRoute module={MODULES.ORDERS} />}>
+            <Route path="/portal/orders" element={<CustomerOrdersPage />} />
+          </Route>
+          <Route element={<ModuleRoute module={MODULES.CUSTOMER_DOCUMENTS} />}>
+            <Route path="/portal/documents" element={<CustomerDocumentsPage />} />
+          </Route>
+          <Route element={<ModuleRoute module={MODULES.NOTIFICATIONS} />}>
+            <Route path="/portal/notifications" element={<CustomerNotificationsPage />} />
+          </Route>
           <Route path="/portal/profile" element={<CustomerProfilePage />} />
         </Route>
       </Route>

@@ -1,3 +1,4 @@
+import { ADDON_BOOLEAN_KEYS } from '../constants/modules.js';
 import * as tenantRepository from '../repositories/tenant.repository.js';
 import {
   dropTenantCollections,
@@ -46,12 +47,12 @@ export const updateTenant = async (tenantId, payload) => {
     $set.isActive = payload.isActive;
   }
 
-  if (payload.addons?.documentAi !== undefined) {
-    $set['addons.documentAi'] = payload.addons.documentAi;
-  }
-
-  if (payload.addons?.documentAiPlanOverride !== undefined) {
-    $set['addons.documentAiPlanOverride'] = payload.addons.documentAiPlanOverride;
+  if (payload.addons) {
+    for (const key of ADDON_BOOLEAN_KEYS) {
+      if (payload.addons[key] !== undefined) {
+        $set[`addons.${key}`] = payload.addons[key];
+      }
+    }
   }
 
   if (!Object.keys($set).length) {

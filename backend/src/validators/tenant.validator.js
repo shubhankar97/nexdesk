@@ -1,3 +1,4 @@
+import { ADDON_BOOLEAN_KEYS } from '../constants/modules.js';
 import { ApiError } from '../utils/ApiError.js';
 
 const SUBDOMAIN_PATTERN = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
@@ -12,7 +13,7 @@ export const validateTenantId = (input) => {
   return { tenantId: tenantId.trim() };
 };
 
-const parseDocumentAiAddons = (addons) => {
+const parseAddons = (addons) => {
   if (addons === undefined) {
     return undefined;
   }
@@ -23,12 +24,10 @@ const parseDocumentAiAddons = (addons) => {
 
   const payload = {};
 
-  if (addons.documentAi !== undefined) {
-    payload.documentAi = Boolean(addons.documentAi);
-  }
-
-  if (addons.documentAiPlanOverride !== undefined) {
-    payload.documentAiPlanOverride = Boolean(addons.documentAiPlanOverride);
+  for (const key of ADDON_BOOLEAN_KEYS) {
+    if (addons[key] !== undefined) {
+      payload[key] = Boolean(addons[key]);
+    }
   }
 
   if (!Object.keys(payload).length) {
@@ -61,10 +60,10 @@ export const validateCreateTenant = (body) => {
     isActive: isActive !== false,
   };
 
-  const documentAiAddons = parseDocumentAiAddons(addons);
+  const parsedAddons = parseAddons(addons);
 
-  if (documentAiAddons !== undefined) {
-    payload.addons = documentAiAddons;
+  if (parsedAddons !== undefined) {
+    payload.addons = parsedAddons;
   }
 
   return payload;
@@ -86,10 +85,10 @@ export const validateUpdateTenant = (body) => {
     payload.isActive = Boolean(isActive);
   }
 
-  const documentAiAddons = parseDocumentAiAddons(addons);
+  const parsedAddons = parseAddons(addons);
 
-  if (documentAiAddons !== undefined) {
-    payload.addons = documentAiAddons;
+  if (parsedAddons !== undefined) {
+    payload.addons = parsedAddons;
   }
 
   if (!Object.keys(payload).length) {

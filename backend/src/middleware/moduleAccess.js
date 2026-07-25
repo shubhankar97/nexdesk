@@ -22,10 +22,7 @@ export const requireModule = (moduleKey = MODULES.DOCUMENT_AI) => async (req, _r
 
     if (!hasModuleAccess(req.tenant, moduleKey, plan)) {
       return next(
-        new ApiError(
-          403,
-          'Module not enabled for this tenant. Require add-on plus plan feature (or Master plan override).'
-        )
+        new ApiError(403, 'This module is not enabled for your tenant. Contact your platform admin.')
       );
     }
 

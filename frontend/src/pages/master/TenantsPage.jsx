@@ -27,6 +27,7 @@ import {
 } from '@mui/material';
 import AdminPage from '../../components/layout/AdminPage.jsx';
 import ConfirmDialog from '../../components/master/ConfirmDialog.jsx';
+import { MASTER_MODULE_TOGGLES } from '../../constants/modules.js';
 import * as tenantService from '../../services/tenant.service.js';
 import { getTenantHost, getTenantZone } from '../../utils/subdomain.js';
 
@@ -34,9 +35,26 @@ const emptyForm = {
   companyName: '',
   subdomain: '',
   isActive: true,
+  orders: true,
+  customers: true,
+  reports: true,
+  notifications: true,
+  settings: true,
+  customerDocuments: true,
   documentAi: false,
   documentAiPlanOverride: false,
 };
+
+const buildAddonsPayload = (form) => ({
+  orders: form.orders,
+  customers: form.customers,
+  reports: form.reports,
+  notifications: form.notifications,
+  settings: form.settings,
+  customerDocuments: form.customerDocuments,
+  documentAi: form.documentAi,
+  documentAiPlanOverride: form.documentAiPlanOverride,
+});
 
 const TenantsPage = () => {
   const [tenants, setTenants] = useState([]);
@@ -85,6 +103,12 @@ const TenantsPage = () => {
       companyName: tenant.companyName,
       subdomain: tenant.subdomain,
       isActive: tenant.isActive,
+      orders: tenant.addons?.orders !== false,
+      customers: tenant.addons?.customers !== false,
+      reports: tenant.addons?.reports !== false,
+      notifications: tenant.addons?.notifications !== false,
+      settings: tenant.addons?.settings !== false,
+      customerDocuments: tenant.addons?.customerDocuments !== false,
       documentAi: Boolean(tenant.addons?.documentAi),
       documentAiPlanOverride: Boolean(tenant.addons?.documentAiPlanOverride),
     });
@@ -106,20 +130,14 @@ const TenantsPage = () => {
         await tenantService.updateTenant(editingId, {
           companyName: form.companyName.trim(),
           isActive: form.isActive,
-          addons: {
-            documentAi: form.documentAi,
-            documentAiPlanOverride: form.documentAiPlanOverride,
-          },
+          addons: buildAddonsPayload(form),
         });
       } else {
         await tenantService.createTenant({
           companyName: form.companyName.trim(),
           subdomain: form.subdomain.trim().toLowerCase(),
           isActive: form.isActive,
-          addons: {
-            documentAi: form.documentAi,
-            documentAiPlanOverride: form.documentAiPlanOverride,
-          },
+          addons: buildAddonsPayload(form),
         });
       }
 
@@ -271,18 +289,30 @@ const TenantsPage = () => {
             label="Active"
             sx={{ mt: 1 }}
           />
-          <FormControlLabel
-            control={
-              <Switch
-                checked={form.documentAi}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, documentAi: event.target.checked }))
-                }
-              />
-            }
-            label="Document AI add-on"
-            sx={{ mt: 0.5 }}
-          />
+
+          <Typography variant="subtitle2" sx={{ mt: 2.5, mb: 0.5 }}>
+            Module access
+          </Typography>
+          <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+            Control which sidebar links admins and customers can use for this tenant.
+          </Typography>
+
+          {MASTER_MODULE_TOGGLES.map((item) => (
+            <FormControlLabel
+              key={item.addonKey}
+              control={
+                <Switch
+                  checked={Boolean(form[item.addonKey])}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, [item.addonKey]: event.target.checked }))
+                  }
+                />
+              }
+              label={item.label}
+              sx={{ mt: 0.5, display: 'flex' }}
+            />
+          ))}
+
           <FormControlLabel
             control={
               <Switch
@@ -295,8 +325,9 @@ const TenantsPage = () => {
                 }
               />
             }
-            label="Bypass plan feature (Master override)"
+            label="Document AI: bypass plan feature (Master override)"
             sx={{ mt: 0.5 }}
+            disabled={!form.documentAi}
           />
           {formError && (
             <Typography variant="body2" color="error" sx={{ mt: 1 }}>
