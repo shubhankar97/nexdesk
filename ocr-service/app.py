@@ -34,36 +34,70 @@ _ocr_load_error: str | None = None
 _ocr_lock = threading.Lock()
 
 
+def _ensure_paddle_model_dirs() -> str:
+    """
+    PaddleOCR downloads models under ~/.paddleocr. On Render, HOME is often
+    /opt/render and nested extract paths can fail (missing dirs / .tar.tmp).
+    Force a writable cache under /tmp and pre-create expected folders.
+    """
+    base = os.getenv("PADDLEOCR_HOME") or os.path.join(tempfile.gettempdir(), "paddleocr")
+    os.makedirs(base, exist_ok=True)
+    os.environ["PADDLEOCR_HOME"] = base
+
+    # Many PaddleOCR 2.x builds still expand ~/.paddleocr via HOME.
+    if not os.getenv("HOME") or os.environ["HOME"].startswith("/opt/render"):
+        os.environ["HOME"] = tempfile.gettempdir()
+
+    home = os.environ["HOME"]
+    whl_root = os.path.join(home, ".paddleocr", "whl")
+    for kind in ("det", "rec", "cls"):
+        os.makedirs(os.path.join(whl_root, kind), exist_ok=True)
+
+    hub = os.path.join(base, "hub")
+    os.makedirs(hub, exist_ok=True)
+    os.environ.setdefault("HUB_HOME", hub)
+
+    return base
+
+
 def _lazy_ocr():
     global _ocr_engine, _ocr_load_error
 
     if _ocr_engine is not None:
         return _ocr_engine
 
-    if _ocr_load_error:
-        raise RuntimeError(_ocr_load_error)
+    with _ocr_lock:
+        if _ocr_engine is not None:
+            return _ocr_engine
 
-    try:
-        from paddleocr import PaddleOCR
-
-        # PaddleOCR 3.x style; fall back to 2.x kwargs if needed.
         try:
-            _ocr_engine = PaddleOCR(
-                use_doc_orientation_classify=False,
-                use_doc_unwarping=False,
-                use_textline_orientation=False,
-                lang="en",
-            )
-        except TypeError:
-            _ocr_engine = PaddleOCR(use_angle_cls=True, lang="en", show_log=False)
+            _ensure_paddle_model_dirs()
+            from paddleocr import PaddleOCR
 
-        return _ocr_engine
-    except Exception as exc:  # noqa: BLE001
-        _ocr_load_error = (
-            "PaddleOCR is not available. Install dependencies from "
-            f"ocr-service/requirements.txt ({exc})"
-        )
-        raise RuntimeError(_ocr_load_error) from exc
+            # Prefer configs that skip angle/cls models (common Render failure point).
+            try:
+                _ocr_engine = PaddleOCR(
+                    use_doc_orientation_classify=False,
+                    use_doc_unwarping=False,
+                    use_textline_orientation=False,
+                    lang="en",
+                )
+            except TypeError:
+                _ocr_engine = PaddleOCR(
+                    use_angle_cls=False,
+                    lang="en",
+                    show_log=False,
+                )
+
+            _ocr_load_error = None
+            return _ocr_engine
+        except Exception as exc:  # noqa: BLE001
+            _ocr_engine = None
+            _ocr_load_error = (
+                "PaddleOCR is not available. Install dependencies from "
+                f"ocr-service/requirements.txt ({exc})"
+            )
+            raise RuntimeError(_ocr_load_error) from exc
 
 
 def _order_points(pts: np.ndarray) -> np.ndarray:
@@ -297,8 +331,11 @@ def run_paddle_ocr(image: Image.Image) -> tuple[str, float | None]:
                     confidences.extend([float(s) for s in rec_scores if s is not None])
 
         else:
-            # PaddleOCR 2.x: ocr.ocr(img, cls=True) -> list of [box, (text, conf)]
-            results = engine.ocr(array, cls=True)
+            # PaddleOCR 2.x: keep cls=False to match init (avoids cls model download).
+            try:
+                results = engine.ocr(array, cls=False)
+            except TypeError:
+                results = engine.ocr(array)
             pages = results or []
             for page in pages:
                 if not page:

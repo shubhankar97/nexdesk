@@ -45,6 +45,8 @@ OCR_SERVICE_URL=http://127.0.0.1:5100
 
 ```env
 OCR_LOW_MEMORY=true
+HOME=/tmp
+PADDLEOCR_HOME=/tmp/paddleocr
 ```
 
 - Build Command:
@@ -56,11 +58,12 @@ pip install --upgrade pip setuptools wheel && pip install paddlepaddle==3.0.0 -i
 - Start Command:
 
 ```bash
-uvicorn app:app --host 0.0.0.0 --port $PORT --workers 1
+mkdir -p /tmp/paddleocr /tmp/.paddleocr/whl/det /tmp/.paddleocr/whl/rec /tmp/.paddleocr/whl/cls && HOME=/tmp uvicorn app:app --host 0.0.0.0 --port $PORT --workers 1
 ```
 
 - Health check: `GET /health` (expect `"paddleocr": true`)
 
+If health shows a `.paddleocr/.../cls...tar.tmp` error, ensure `HOME=/tmp` and redeploy — Render’s `/opt/render` home often breaks model extraction.
 ## Endpoints
 
 - `GET /health` — service + PaddleOCR readiness
