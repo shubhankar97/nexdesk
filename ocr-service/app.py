@@ -9,6 +9,7 @@ Provides:
 
 from __future__ import annotations
 
+import gc
 import io
 import json
 import os
@@ -16,7 +17,7 @@ import subprocess
 import sys
 import tempfile
 import threading
-from typing import Any
+from typing import Any, Iterator
 
 import numpy as np
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -85,6 +86,9 @@ def _create_paddle_ocr():
     """Create PaddleOCR with CPU-safe batch sizes (avoids Place(undefined) matmul)."""
     from paddleocr import PaddleOCR
 
+    # Keep detection canvas small on Render — large det maps are the usual OOM trigger.
+    det_limit = 480 if low_memory_mode() else 720
+
     # Always use the 2.x-compatible kwargs — rec_batch_num=1 is critical for dense pages.
     common = {
         "lang": "en",
@@ -95,7 +99,7 @@ def _create_paddle_ocr():
         "rec_batch_num": 1,
         "cls_batch_num": 1,
         "max_batch_size": 1,
-        "det_limit_side_len": 720,
+        "det_limit_side_len": det_limit,
         "det_db_thresh": 0.4,
         "det_db_box_thresh": 0.6,
         "show_log": False,
@@ -332,23 +336,42 @@ def extract_pdf_text(pdf_bytes: bytes) -> tuple[str, int]:
         doc.close()
 
 
-def pdf_pages_to_images(pdf_bytes: bytes, max_pages: int = 20) -> list[Image.Image]:
+def iter_pdf_page_images(
+    pdf_bytes: bytes,
+    max_pages: int = 20,
+    zoom: float | None = None,
+    max_side: int | None = None,
+) -> Iterator[Image.Image]:
+    """
+    Yield one downscaled page at a time so peak RAM stays near a single page
+    (holding zoom=2 rasters for every page OOMs small Render instances).
+    """
     import fitz
 
+    if zoom is None:
+        zoom = 1.0 if low_memory_mode() else 2.0
+    if max_side is None:
+        max_side = 480 if low_memory_mode() else 1600
+
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    images: list[Image.Image] = []
     try:
         page_count = min(doc.page_count, max_pages)
-        zoom = 2.0
         matrix = fitz.Matrix(zoom, zoom)
         for index in range(page_count):
             page = doc.load_page(index)
             pix = page.get_pixmap(matrix=matrix, alpha=False)
             image = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
-            images.append(image)
-        return images
+            # Drop pixmap buffers ASAP.
+            del pix
+            yield downscale_for_ocr(image, max_side=max_side)
+            del image
+            gc.collect()
     finally:
         doc.close()
+
+
+def pdf_pages_to_images(pdf_bytes: bytes, max_pages: int = 20) -> list[Image.Image]:
+    return list(iter_pdf_page_images(pdf_bytes, max_pages=max_pages))
 
 
 def run_paddle_ocr(image: Image.Image) -> tuple[str, float | None]:
@@ -461,20 +484,41 @@ def run_paddle_ocr_subprocess(image: Image.Image, max_side: int) -> tuple[str, f
 
 def run_paddle_ocr_resilient(image: Image.Image) -> tuple[str, float | None]:
     """
-    Prefer subprocess OCR (stable on macOS/Paddle CPU). Fall back to in-process
-    with progressive downscale if the worker is unavailable.
+    Run OCR with progressive downscale retries.
+
+    Low-memory (Render): in-process ONLY. /health already loaded Paddle in this
+    process; spawning ocr_worker.py loads a second copy and OOMs → empty HTTP 502.
+
+    Higher-memory / local: prefer subprocess to isolate Place(undefined) poisoning.
     """
     longest = max(image.size)
     # Dense GST invoice tables crash Paddle above ~360px on this CPU build.
     # 320px is the sweet spot found for table invoices on macOS Paddle 3.0.
     if low_memory_mode():
-        attempts = (320, 360, 280, 240)
+        attempts = (280, 240, 200, 160)
     elif longest >= 1600:
         attempts = (320, 400, 280)
     else:
         attempts = (320, 400, 280)
 
     last_error: BaseException | None = None
+
+    if low_memory_mode():
+        for max_side in attempts:
+            prepared = downscale_for_ocr(image, max_side=max_side)
+            try:
+                return run_paddle_ocr(prepared)
+            except Exception as exc:  # noqa: BLE001
+                last_error = exc
+                if not _is_allocator_error(exc):
+                    # Still try a smaller size once for transient matmul failures.
+                    if "matmul" not in str(exc).lower():
+                        raise
+                _reset_ocr_engine()
+                gc.collect()
+                continue
+        assert last_error is not None
+        raise last_error
 
     # Subprocess path first — avoids allocator poisoning across retries.
     for max_side in attempts:
@@ -483,11 +527,6 @@ def run_paddle_ocr_resilient(image: Image.Image) -> tuple[str, float | None]:
             return run_paddle_ocr_subprocess(prepared, max_side=max_side)
         except Exception as exc:  # noqa: BLE001
             last_error = exc
-            if not _is_allocator_error(exc) and "worker" not in str(exc).lower():
-                # Still retry smaller sizes for allocator-like failures only.
-                if "matmul" not in str(exc).lower() and "allocator" not in str(exc).lower():
-                    # Non-allocator errors: still try smaller once, then continue.
-                    pass
             continue
 
     # Last resort: in-process engine.
@@ -545,10 +584,21 @@ def prepare_image_for_ocr(content: bytes) -> Image.Image:
     Load and aggressively downscale BEFORE enhance/OCR.
     Large JPEGs (1–3MB phone photos) blow up Paddle recognition batches.
     """
+    max_side = 360 if low_memory_mode() else 720
     image = Image.open(io.BytesIO(content))
-    image = ImageOps.exif_transpose(image)
+    try:
+        image = ImageOps.exif_transpose(image)
+        # Hint JPEG decoder to skip full-res decode when possible.
+        try:
+            image.draft("RGB", (max_side * 2, max_side * 2))
+        except Exception:  # noqa: BLE001
+            pass
+        rgb = image.convert("RGB")
+    finally:
+        image.close()
+
     # Cap early so soft_enhance / OpenCV never see multi-megapixel rasters.
-    return downscale_for_ocr(image, max_side=480 if low_memory_mode() else 720)
+    return downscale_for_ocr(rgb, max_side=max_side)
 
 
 def process_image_bytes(content: bytes, preprocess: bool = True) -> dict[str, Any]:
@@ -624,25 +674,32 @@ def process_pdf_bytes(content: bytes, preprocess: bool = True) -> dict[str, Any]
             "preprocessed": False,
         }
 
-    max_pages = 5 if low_memory_mode() else 20
-    page_images = pdf_pages_to_images(content, max_pages=max_pages)
+    max_pages = 3 if low_memory_mode() else 20
     page_texts: list[str] = []
     confidences: list[float] = []
 
-    for page_image in page_images:
-        prepared = preprocess_image(page_image) if preprocess else page_image.convert("RGB")
+    for page_image in iter_pdf_page_images(content, max_pages=max_pages):
+        # Low-memory: skip OpenCV geometry — it duplicates full-page arrays.
+        if low_memory_mode() or not preprocess:
+            prepared = page_image.convert("RGB") if page_image.mode != "RGB" else page_image
+        else:
+            prepared = preprocess_image(page_image)
+
         text, confidence = run_paddle_ocr_resilient(prepared)
         if text:
             page_texts.append(text)
         if confidence is not None:
             confidences.append(confidence)
 
+        del prepared, page_image
+        gc.collect()
+
     return {
         "text": "\n\n".join(page_texts).strip(),
         "confidence": (sum(confidences) / len(confidences)) if confidences else None,
         "pageCount": page_count,
         "source": "paddleocr",
-        "preprocessed": preprocess,
+        "preprocessed": preprocess and not low_memory_mode(),
     }
 
 
