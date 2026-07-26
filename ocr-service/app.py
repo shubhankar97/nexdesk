@@ -10,7 +10,10 @@ Provides:
 from __future__ import annotations
 
 import io
+import json
 import os
+import subprocess
+import sys
 import tempfile
 import threading
 from typing import Any
@@ -32,6 +35,18 @@ app.add_middleware(
 _ocr_engine = None
 _ocr_load_error: str | None = None
 _ocr_lock = threading.Lock()
+
+
+def _configure_paddle_runtime() -> None:
+    """Force a stable CPU runtime before importing paddle / paddleocr."""
+    os.environ["CUDA_VISIBLE_DEVICES"] = ""
+    os.environ["FLAGS_use_mkldnn"] = "0"
+    os.environ["FLAGS_allocator_strategy"] = "naive_best_fit"
+    os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+    # Avoid OneDNN / OpenMP allocator crashes on macOS.
+    os.environ["OMP_NUM_THREADS"] = "1"
+    os.environ["MKL_NUM_THREADS"] = "1"
+    os.environ["OPENBLAS_NUM_THREADS"] = "1"
 
 
 def _ensure_paddle_model_dirs() -> str:
@@ -60,6 +75,54 @@ def _ensure_paddle_model_dirs() -> str:
     return base
 
 
+def _reset_ocr_engine() -> None:
+    global _ocr_engine, _ocr_load_error
+    _ocr_engine = None
+    _ocr_load_error = None
+
+
+def _create_paddle_ocr():
+    """Create PaddleOCR with CPU-safe batch sizes (avoids Place(undefined) matmul)."""
+    from paddleocr import PaddleOCR
+
+    # Always use the 2.x-compatible kwargs — rec_batch_num=1 is critical for dense pages.
+    common = {
+        "lang": "en",
+        "use_angle_cls": False,
+        "use_gpu": False,
+        "enable_mkldnn": False,
+        "cpu_threads": 1,
+        "rec_batch_num": 1,
+        "cls_batch_num": 1,
+        "max_batch_size": 1,
+        "det_limit_side_len": 720,
+        "det_db_thresh": 0.4,
+        "det_db_box_thresh": 0.6,
+        "show_log": False,
+    }
+
+    try:
+        return PaddleOCR(**common)
+    except TypeError:
+        # Strip unsupported kwargs for older/newer variants.
+        for drop in (
+            "enable_mkldnn",
+            "cpu_threads",
+            "rec_batch_num",
+            "cls_batch_num",
+            "max_batch_size",
+            "det_limit_side_len",
+            "show_log",
+            "use_gpu",
+        ):
+            common.pop(drop, None)
+            try:
+                return PaddleOCR(**common)
+            except TypeError:
+                continue
+        return PaddleOCR(lang="en", use_angle_cls=False)
+
+
 def _lazy_ocr():
     global _ocr_engine, _ocr_load_error
 
@@ -71,24 +134,17 @@ def _lazy_ocr():
             return _ocr_engine
 
         try:
+            _configure_paddle_runtime()
             _ensure_paddle_model_dirs()
-            from paddleocr import PaddleOCR
 
-            # Prefer configs that skip angle/cls models (common Render failure point).
+            import paddle
+
             try:
-                _ocr_engine = PaddleOCR(
-                    use_doc_orientation_classify=False,
-                    use_doc_unwarping=False,
-                    use_textline_orientation=False,
-                    lang="en",
-                )
-            except TypeError:
-                _ocr_engine = PaddleOCR(
-                    use_angle_cls=False,
-                    lang="en",
-                    show_log=False,
-                )
+                paddle.set_device("cpu")
+            except Exception:  # noqa: BLE001
+                pass
 
+            _ocr_engine = _create_paddle_ocr()
             _ocr_load_error = None
             return _ocr_engine
         except Exception as exc:  # noqa: BLE001
@@ -257,8 +313,9 @@ def preprocess_image(image: Image.Image) -> Image.Image:
 
 
 def _pil_to_bgr(image: Image.Image) -> np.ndarray:
-    rgb = np.asarray(image.convert("RGB"))
-    return rgb[:, :, ::-1].copy()
+    rgb = np.asarray(image.convert("RGB"), dtype=np.uint8)
+    # Contiguous BGR — non-contiguous views trigger Paddle Place(undefined) matmul crashes.
+    return np.ascontiguousarray(rgb[:, :, ::-1])
 
 
 def extract_pdf_text(pdf_bytes: bytes) -> tuple[str, int]:
@@ -301,57 +358,151 @@ def run_paddle_ocr(image: Image.Image) -> tuple[str, float | None]:
     texts: list[str] = []
     confidences: list[float] = []
 
+    def _parse_ocr_results(results: Any) -> None:
+        pages = results or []
+        for page in pages:
+            if not page:
+                continue
+            for line in page:
+                if not line or len(line) < 2:
+                    continue
+                text_info = line[1]
+                if isinstance(text_info, (list, tuple)) and text_info:
+                    texts.append(str(text_info[0]))
+                    if len(text_info) > 1 and text_info[1] is not None:
+                        confidences.append(float(text_info[1]))
+
     # PaddleOCR is not reliably thread-safe under concurrent CPU inference.
     with _ocr_lock:
-        # PaddleOCR 3.x
-        if hasattr(engine, "predict"):
-            results = engine.predict(array)
-            for item in results or []:
-                if isinstance(item, dict):
-                    rec_texts = item.get("rec_texts") or item.get("texts") or []
-                    rec_scores = item.get("rec_scores") or item.get("scores") or []
-                    texts.extend([str(t) for t in rec_texts if t])
-                    confidences.extend([float(s) for s in rec_scores if s is not None])
-                    continue
-
-                # Result objects with attributes
-                rec_texts = getattr(item, "rec_texts", None) or getattr(item, "texts", None)
-                rec_scores = getattr(item, "rec_scores", None) or getattr(item, "scores", None)
-                if rec_texts:
-                    texts.extend([str(t) for t in rec_texts if t])
-                if rec_scores:
-                    confidences.extend([float(s) for s in rec_scores if s is not None])
-
-                # Fallback: print()/json style dict
-                data = getattr(item, "json", None) or getattr(item, "res", None)
-                if isinstance(data, dict):
-                    rec_texts = data.get("rec_texts") or []
-                    rec_scores = data.get("rec_scores") or []
-                    texts.extend([str(t) for t in rec_texts if t])
-                    confidences.extend([float(s) for s in rec_scores if s is not None])
-
-        else:
-            # PaddleOCR 2.x: keep cls=False to match init (avoids cls model download).
-            try:
-                results = engine.ocr(array, cls=False)
-            except TypeError:
-                results = engine.ocr(array)
-            pages = results or []
-            for page in pages:
-                if not page:
-                    continue
-                for line in page:
-                    if not line or len(line) < 2:
-                        continue
-                    text_info = line[1]
-                    if isinstance(text_info, (list, tuple)) and text_info:
-                        texts.append(str(text_info[0]))
-                        if len(text_info) > 1 and text_info[1] is not None:
-                            confidences.append(float(text_info[1]))
+        try:
+            # Prefer classic ocr() path — more stable than predict() for batch matmul.
+            if hasattr(engine, "ocr"):
+                try:
+                    results = engine.ocr(array, cls=False)
+                except TypeError:
+                    results = engine.ocr(array)
+                _parse_ocr_results(results)
+            elif hasattr(engine, "predict"):
+                results = engine.predict(array)
+                for item in results or []:
+                    if isinstance(item, dict):
+                        rec_texts = item.get("rec_texts") or item.get("texts") or []
+                        rec_scores = item.get("rec_scores") or item.get("scores") or []
+                        texts.extend([str(t) for t in rec_texts if t])
+                        confidences.extend([float(s) for s in rec_scores if s is not None])
+        except Exception as exc:  # noqa: BLE001
+            message = str(exc)
+            if "allocator" in message.lower() or "Place(undefined" in message:
+                # Engine can be left in a bad state after this crash — force rebuild.
+                _reset_ocr_engine()
+            raise
 
     joined = "\n".join(t.strip() for t in texts if t and str(t).strip())
     avg_conf = sum(confidences) / len(confidences) if confidences else None
     return joined, avg_conf
+
+
+def _is_allocator_error(exc: BaseException) -> bool:
+    message = str(exc).lower()
+    return (
+        "allocator" in message
+        or "place(undefined" in message
+        or "operator < matmul" in message
+        or "(notfound)" in message
+    )
+
+
+def run_paddle_ocr_subprocess(image: Image.Image, max_side: int) -> tuple[str, float | None]:
+    """
+    Run OCR in a fresh Python process. Dense invoices can poison in-process Paddle
+    with Place(undefined) matmul errors; a subprocess isolates that failure.
+    """
+    worker = os.path.join(os.path.dirname(__file__), "ocr_worker.py")
+    python = sys.executable
+
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+        temp_path = tmp.name
+        image.convert("RGB").save(temp_path, format="PNG")
+
+    try:
+        completed = subprocess.run(
+            [python, worker, temp_path, str(max_side)],
+            capture_output=True,
+            text=True,
+            timeout=180,
+            env={
+                **os.environ,
+                "CUDA_VISIBLE_DEVICES": "",
+                "FLAGS_use_mkldnn": "0",
+                "OMP_NUM_THREADS": "1",
+                "MKL_NUM_THREADS": "1",
+            },
+            check=False,
+        )
+    finally:
+        try:
+            os.unlink(temp_path)
+        except OSError:
+            pass
+
+    stdout = (completed.stdout or "").strip()
+    if not stdout:
+        stderr = (completed.stderr or "").strip()
+        raise RuntimeError(stderr or "OCR worker returned empty output")
+
+    # Worker prints one JSON line; ignore paddle warnings on stderr.
+    last_line = stdout.splitlines()[-1]
+    payload = json.loads(last_line)
+    if not payload.get("ok"):
+        raise RuntimeError(payload.get("error") or "OCR worker failed")
+
+    return payload.get("text") or "", payload.get("confidence")
+
+
+def run_paddle_ocr_resilient(image: Image.Image) -> tuple[str, float | None]:
+    """
+    Prefer subprocess OCR (stable on macOS/Paddle CPU). Fall back to in-process
+    with progressive downscale if the worker is unavailable.
+    """
+    longest = max(image.size)
+    # Dense GST invoice tables crash Paddle above ~360px on this CPU build.
+    # 320px is the sweet spot found for table invoices on macOS Paddle 3.0.
+    if low_memory_mode():
+        attempts = (320, 360, 280, 240)
+    elif longest >= 1600:
+        attempts = (320, 400, 280)
+    else:
+        attempts = (320, 400, 280)
+
+    last_error: BaseException | None = None
+
+    # Subprocess path first — avoids allocator poisoning across retries.
+    for max_side in attempts:
+        prepared = downscale_for_ocr(image, max_side=max_side)
+        try:
+            return run_paddle_ocr_subprocess(prepared, max_side=max_side)
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+            if not _is_allocator_error(exc) and "worker" not in str(exc).lower():
+                # Still retry smaller sizes for allocator-like failures only.
+                if "matmul" not in str(exc).lower() and "allocator" not in str(exc).lower():
+                    # Non-allocator errors: still try smaller once, then continue.
+                    pass
+            continue
+
+    # Last resort: in-process engine.
+    for max_side in attempts:
+        prepared = downscale_for_ocr(image, max_side=max_side)
+        try:
+            return run_paddle_ocr(prepared)
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+            if not _is_allocator_error(exc):
+                raise
+            continue
+
+    assert last_error is not None
+    raise last_error
 
 
 def _score_ocr(text: str, confidence: float | None) -> float:
@@ -374,27 +525,37 @@ def low_memory_mode() -> bool:
 
 def downscale_for_ocr(image: Image.Image, max_side: int | None = None) -> Image.Image:
     if max_side is None:
-        max_side = 1280 if low_memory_mode() else 2000
+        max_side = 960 if low_memory_mode() else 1600
 
     width, height = image.size
     longest = max(width, height)
     if longest <= max_side:
-        return image
+        return image.convert("RGB") if image.mode != "RGB" else image
 
     scale = max_side / float(longest)
-    return image.resize(
+    resized = image.resize(
         (max(1, int(width * scale)), max(1, int(height * scale))),
         Image.Resampling.LANCZOS,
     )
+    return resized.convert("RGB")
+
+
+def prepare_image_for_ocr(content: bytes) -> Image.Image:
+    """
+    Load and aggressively downscale BEFORE enhance/OCR.
+    Large JPEGs (1–3MB phone photos) blow up Paddle recognition batches.
+    """
+    image = Image.open(io.BytesIO(content))
+    image = ImageOps.exif_transpose(image)
+    # Cap early so soft_enhance / OpenCV never see multi-megapixel rasters.
+    return downscale_for_ocr(image, max_side=480 if low_memory_mode() else 720)
 
 
 def process_image_bytes(content: bytes, preprocess: bool = True) -> dict[str, Any]:
-    image = Image.open(io.BytesIO(content))
-    image = ImageOps.exif_transpose(image)
+    image = prepare_image_for_ocr(content)
 
     if not preprocess:
-        prepared = downscale_for_ocr(image.convert("RGB"))
-        text, confidence = run_paddle_ocr(prepared)
+        text, confidence = run_paddle_ocr_resilient(image)
         return {
             "text": text,
             "confidence": confidence,
@@ -403,15 +564,15 @@ def process_image_bytes(content: bytes, preprocess: bool = True) -> dict[str, An
             "preprocessed": False,
         }
 
-    # Low-memory path: single soft-enhance pass (avoids OOM / empty 502 on small hosts).
+    # Low-memory path: skip heavy enhance — soft_enhance on table invoices
+    # often forces tinier retries that return empty text.
     if low_memory_mode():
-        prepared = downscale_for_ocr(soft_enhance(image))
-        text, confidence = run_paddle_ocr(prepared)
+        text, confidence = run_paddle_ocr_resilient(image)
         return {
             "text": text,
             "confidence": confidence,
             "pageCount": 1,
-            "source": "paddleocr:soft",
+            "source": "paddleocr:scaled",
             "preprocessed": True,
         }
 
@@ -419,22 +580,22 @@ def process_image_bytes(content: bytes, preprocess: bool = True) -> dict[str, An
     # Pick the higher-scoring result so aggressive warps cannot regress quality.
     candidates: list[tuple[str, str, float | None]] = []
     try:
-        corrected = downscale_for_ocr(soft_enhance(correct_document_geometry(image)))
-        text, confidence = run_paddle_ocr(corrected)
+        text, confidence = run_paddle_ocr_resilient(
+            soft_enhance(correct_document_geometry(image))
+        )
         candidates.append(("geometry+soft", text, confidence))
     except Exception:  # noqa: BLE001
         pass
 
     try:
-        soft = downscale_for_ocr(soft_enhance(image))
-        text, confidence = run_paddle_ocr(soft)
+        text, confidence = run_paddle_ocr_resilient(soft_enhance(image))
         candidates.append(("soft", text, confidence))
     except Exception:  # noqa: BLE001
         pass
 
     if not candidates:
         # Last resort: original RGB
-        text, confidence = run_paddle_ocr(downscale_for_ocr(image.convert("RGB")))
+        text, confidence = run_paddle_ocr_resilient(image)
         candidates.append(("raw", text, confidence))
 
     best_label, best_text, best_conf = max(
@@ -470,8 +631,7 @@ def process_pdf_bytes(content: bytes, preprocess: bool = True) -> dict[str, Any]
 
     for page_image in page_images:
         prepared = preprocess_image(page_image) if preprocess else page_image.convert("RGB")
-        prepared = downscale_for_ocr(prepared)
-        text, confidence = run_paddle_ocr(prepared)
+        text, confidence = run_paddle_ocr_resilient(prepared)
         if text:
             page_texts.append(text)
         if confidence is not None:
