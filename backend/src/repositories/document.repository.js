@@ -12,12 +12,18 @@ const requireTenantModels = () => {
 
 export const findDocuments = (filter = {}) => {
   const { Document } = requireTenantModels();
+  // fileData has select: false — list payloads stay lean
   return Document.find(filter).sort({ createdAt: -1 });
 };
 
 export const findDocumentById = (id) => {
   const { Document } = requireTenantModels();
   return Document.findById(id);
+};
+
+export const findDocumentByIdWithFile = (id) => {
+  const { Document } = requireTenantModels();
+  return Document.findById(id).select('+fileData');
 };
 
 export const createDocument = (data) => {

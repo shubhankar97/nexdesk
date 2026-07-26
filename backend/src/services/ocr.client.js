@@ -1,7 +1,13 @@
 import { env } from '../config/env.js';
 import { ApiError } from '../utils/ApiError.js';
 
-const DEFAULT_TIMEOUT_MS = 120000;
+// Render free tier cold-starts + first PaddleOCR model load can exceed a minute.
+const HEALTH_TIMEOUT_MS = 90000;
+const HEALTH_RETRIES = 3;
+const HEALTH_RETRY_DELAY_MS = 5000;
+const OCR_TIMEOUT_MS = 180000;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const truncate = (value, max = 300) => {
   const text = String(value || '').trim();
@@ -11,13 +17,24 @@ const truncate = (value, max = 300) => {
   return `${text.slice(0, max)}…`;
 };
 
+const isTimeoutError = (error) => {
+  const message = String(error?.message || error || '');
+  return (
+    error?.name === 'TimeoutError' ||
+    error?.name === 'AbortError' ||
+    /aborted due to timeout|timeout|timed out/i.test(message)
+  );
+};
+
 const parseJsonResponse = async (response) => {
   const raw = await response.text();
 
   if (!raw) {
     throw new ApiError(
       502,
-      `OCR service returned an empty response (HTTP ${response.status})`
+      response.status === 502
+        ? 'OCR service crashed or ran out of memory (HTTP 502). Use a larger Render instance (1GB+) or retry with a smaller image/PDF.'
+        : `OCR service returned an empty response (HTTP ${response.status})`
     );
   }
 
@@ -46,24 +63,70 @@ const buildOcrFormData = ({ buffer, filename, mimeType, preprocess }) => {
   return { form, byteLength: bytes.length };
 };
 
+const fetchOcrHealthOnce = async (timeoutMs = HEALTH_TIMEOUT_MS) => {
+  const response = await fetch(`${env.ocrServiceUrl}/health`, {
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  return parseJsonResponse(response);
+};
+
 export const isOcrServiceConfigured = () => Boolean(env.ocrServiceUrl);
 
-export const checkOcrHealth = async () => {
+export const checkOcrHealth = async ({
+  timeoutMs = HEALTH_TIMEOUT_MS,
+  retries = 1,
+  retryDelayMs = HEALTH_RETRY_DELAY_MS,
+} = {}) => {
   if (!env.ocrServiceUrl) {
     return { ok: false, error: 'OCR_SERVICE_URL is not configured' };
   }
 
-  try {
-    const response = await fetch(`${env.ocrServiceUrl}/health`, {
-      signal: AbortSignal.timeout(15000),
-    });
-    return await parseJsonResponse(response);
-  } catch (error) {
-    if (error instanceof ApiError) {
-      return { ok: false, error: error.message };
+  let lastError = 'OCR service unreachable';
+
+  for (let attempt = 1; attempt <= retries; attempt += 1) {
+    try {
+      return await fetchOcrHealthOnce(timeoutMs);
+    } catch (error) {
+      if (error instanceof ApiError) {
+        lastError = error.message;
+      } else {
+        lastError = error.message || 'OCR service unreachable';
+      }
+
+      const shouldRetry = attempt < retries && isTimeoutError(error);
+      if (!shouldRetry) {
+        break;
+      }
+
+      await sleep(retryDelayMs);
     }
-    return { ok: false, error: error.message || 'OCR service unreachable' };
   }
+
+  return { ok: false, error: lastError };
+};
+
+const waitForOcrReady = async () => {
+  const health = await checkOcrHealth({
+    timeoutMs: HEALTH_TIMEOUT_MS,
+    retries: HEALTH_RETRIES,
+    retryDelayMs: HEALTH_RETRY_DELAY_MS,
+  });
+
+  if (!health?.ok) {
+    throw new ApiError(
+      503,
+      `OCR service unhealthy: ${health?.error || 'unknown error'}. If the service just woke from sleep, wait ~1 minute and retry.`
+    );
+  }
+
+  if (health.paddleocr === false) {
+    throw new ApiError(
+      503,
+      `PaddleOCR is not ready on OCR service: ${health.error || 'check OCR deploy logs'}`
+    );
+  }
+
+  return health;
 };
 
 export const runOcrOnFile = async ({ buffer, filename, mimeType, preprocess = true }) => {
@@ -75,16 +138,7 @@ export const runOcrOnFile = async ({ buffer, filename, mimeType, preprocess = tr
     throw new ApiError(400, 'Stored document file is empty');
   }
 
-  const health = await checkOcrHealth();
-  if (!health?.ok) {
-    throw new ApiError(503, `OCR service unhealthy: ${health?.error || 'unknown error'}`);
-  }
-  if (health.paddleocr === false) {
-    throw new ApiError(
-      503,
-      `PaddleOCR is not ready on OCR service: ${health.error || 'check OCR deploy logs'}`
-    );
-  }
+  await waitForOcrReady();
 
   const { form, byteLength } = buildOcrFormData({ buffer, filename, mimeType, preprocess });
 
@@ -93,9 +147,15 @@ export const runOcrOnFile = async ({ buffer, filename, mimeType, preprocess = tr
     response = await fetch(`${env.ocrServiceUrl}/ocr`, {
       method: 'POST',
       body: form,
-      signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
+      signal: AbortSignal.timeout(OCR_TIMEOUT_MS),
     });
   } catch (error) {
+    if (isTimeoutError(error)) {
+      throw new ApiError(
+        503,
+        'OCR request timed out. The OCR service may still be loading models — retry in a minute.'
+      );
+    }
     throw new ApiError(503, `OCR service unreachable: ${error.message}`);
   }
 
@@ -105,7 +165,6 @@ export const runOcrOnFile = async ({ buffer, filename, mimeType, preprocess = tr
     const detail = payload?.detail || payload?.message || 'OCR processing failed';
     const message = typeof detail === 'string' ? detail : JSON.stringify(detail);
 
-    // Surface OCR rejection clearly (e.g. Empty file / Unsupported file type).
     if (response.status === 400) {
       throw new ApiError(
         400,

@@ -323,11 +323,41 @@ def _score_ocr(text: str, confidence: float | None) -> float:
     return length * (0.35 + conf)
 
 
+def _env_flag(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def low_memory_mode() -> bool:
+    # Default on — Render free/starter instances OOM easily with dual-pass OCR.
+    return _env_flag("OCR_LOW_MEMORY", True)
+
+
+def downscale_for_ocr(image: Image.Image, max_side: int | None = None) -> Image.Image:
+    if max_side is None:
+        max_side = 1280 if low_memory_mode() else 2000
+
+    width, height = image.size
+    longest = max(width, height)
+    if longest <= max_side:
+        return image
+
+    scale = max_side / float(longest)
+    return image.resize(
+        (max(1, int(width * scale)), max(1, int(height * scale))),
+        Image.Resampling.LANCZOS,
+    )
+
+
 def process_image_bytes(content: bytes, preprocess: bool = True) -> dict[str, Any]:
     image = Image.open(io.BytesIO(content))
+    image = ImageOps.exif_transpose(image)
 
     if not preprocess:
-        text, confidence = run_paddle_ocr(image.convert("RGB"))
+        prepared = downscale_for_ocr(image.convert("RGB"))
+        text, confidence = run_paddle_ocr(prepared)
         return {
             "text": text,
             "confidence": confidence,
@@ -336,18 +366,30 @@ def process_image_bytes(content: bytes, preprocess: bool = True) -> dict[str, An
             "preprocessed": False,
         }
 
+    # Low-memory path: single soft-enhance pass (avoids OOM / empty 502 on small hosts).
+    if low_memory_mode():
+        prepared = downscale_for_ocr(soft_enhance(image))
+        text, confidence = run_paddle_ocr(prepared)
+        return {
+            "text": text,
+            "confidence": confidence,
+            "pageCount": 1,
+            "source": "paddleocr:soft",
+            "preprocessed": True,
+        }
+
     # Dual-pass: geometry-corrected soft enhance vs soft enhance only.
     # Pick the higher-scoring result so aggressive warps cannot regress quality.
     candidates: list[tuple[str, str, float | None]] = []
     try:
-        corrected = soft_enhance(correct_document_geometry(image))
+        corrected = downscale_for_ocr(soft_enhance(correct_document_geometry(image)))
         text, confidence = run_paddle_ocr(corrected)
         candidates.append(("geometry+soft", text, confidence))
     except Exception:  # noqa: BLE001
         pass
 
     try:
-        soft = soft_enhance(image)
+        soft = downscale_for_ocr(soft_enhance(image))
         text, confidence = run_paddle_ocr(soft)
         candidates.append(("soft", text, confidence))
     except Exception:  # noqa: BLE001
@@ -355,7 +397,7 @@ def process_image_bytes(content: bytes, preprocess: bool = True) -> dict[str, An
 
     if not candidates:
         # Last resort: original RGB
-        text, confidence = run_paddle_ocr(ImageOps.exif_transpose(image).convert("RGB"))
+        text, confidence = run_paddle_ocr(downscale_for_ocr(image.convert("RGB")))
         candidates.append(("raw", text, confidence))
 
     best_label, best_text, best_conf = max(
@@ -384,12 +426,14 @@ def process_pdf_bytes(content: bytes, preprocess: bool = True) -> dict[str, Any]
             "preprocessed": False,
         }
 
-    page_images = pdf_pages_to_images(content)
+    max_pages = 5 if low_memory_mode() else 20
+    page_images = pdf_pages_to_images(content, max_pages=max_pages)
     page_texts: list[str] = []
     confidences: list[float] = []
 
     for page_image in page_images:
         prepared = preprocess_image(page_image) if preprocess else page_image.convert("RGB")
+        prepared = downscale_for_ocr(prepared)
         text, confidence = run_paddle_ocr(prepared)
         if text:
             page_texts.append(text)
@@ -430,6 +474,7 @@ def health() -> dict[str, Any]:
         "ok": True,
         "paddleocr": paddle_ready,
         "error": paddle_error,
+        "lowMemory": low_memory_mode(),
     }
 
 

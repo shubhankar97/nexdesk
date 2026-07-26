@@ -13,7 +13,7 @@ import { createStoredFileName } from '../models/schemas/document.schema.js';
 import * as documentRepository from '../repositories/document.repository.js';
 import { ApiError } from '../utils/ApiError.js';
 import { buildExportFile } from '../utils/invoiceExport.js';
-import { deleteStoredFile, readStoredFile, saveUploadedFile } from '../utils/storage.js';
+import { deleteStoredFile, readStoredFile } from '../utils/storage.js';
 import { parseInvoiceText } from './invoiceParser.service.js';
 import { validateInvoiceJson } from './invoiceValidator.service.js';
 import * as ocrClient from './ocr.client.js';
@@ -25,6 +25,50 @@ const toExportDocument = (document) =>
   formatDocument(document, { includeText: false, includeParsed: true });
 
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const isMongoStoragePath = (storagePath) =>
+  typeof storagePath === 'string' && storagePath.startsWith('mongo:');
+
+const isDiskStoragePath = (storagePath) =>
+  typeof storagePath === 'string' && storagePath.length > 0 && !isMongoStoragePath(storagePath);
+
+const toBuffer = (fileData) => {
+  if (!fileData) {
+    return null;
+  }
+
+  if (Buffer.isBuffer(fileData)) {
+    return fileData.length > 0 ? fileData : null;
+  }
+
+  if (fileData.buffer && typeof fileData.buffer === 'object') {
+    const buf = Buffer.from(fileData.buffer);
+    return buf.length > 0 ? buf : null;
+  }
+
+  try {
+    const buf = Buffer.from(fileData);
+    return buf.length > 0 ? buf : null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Prefer Mongo BinData; fall back to legacy disk files when present.
+ */
+const readDocumentFileBuffer = async (document) => {
+  const fromMongo = toBuffer(document.fileData);
+  if (fromMongo) {
+    return fromMongo;
+  }
+
+  if (isDiskStoragePath(document.storagePath)) {
+    return readStoredFile(document.storagePath);
+  }
+
+  throw new ApiError(404, 'File data not found in database');
+};
 
 const buildHistoryFilter = (filters = {}) => {
   const query = {};
@@ -159,14 +203,19 @@ export const uploadDocuments = async (files, user) => {
     assertAllowedFile(file);
 
     const storedName = createStoredFileName(file.originalname);
-    const storagePath = await saveUploadedFile(tenantId, storedName, file.buffer);
+    const fileBuffer = Buffer.isBuffer(file.buffer) ? file.buffer : Buffer.from(file.buffer || []);
+
+    if (!fileBuffer.length) {
+      throw new ApiError(400, 'Uploaded file is empty');
+    }
 
     const document = await documentRepository.createDocument({
       originalName: file.originalname,
       storedName,
       mimeType: file.mimetype,
-      size: file.size,
-      storagePath,
+      size: file.size || fileBuffer.length,
+      storagePath: `mongo:${storedName}`,
+      fileData: fileBuffer,
       status: DOCUMENT_STATUS.UPLOADED,
       uploadedBy: String(uploadedBy),
       parseStatus: PARSE_STATUS.PENDING,
@@ -194,7 +243,7 @@ export const getDocumentAiUsage = async () => {
 };
 
 export const processDocumentOcr = async (id) => {
-  const document = await documentRepository.findDocumentById(id);
+  const document = await documentRepository.findDocumentByIdWithFile(id);
 
   if (!document) {
     throw new ApiError(404, 'Document not found');
@@ -209,7 +258,7 @@ export const processDocumentOcr = async (id) => {
   });
 
   try {
-    const buffer = await readStoredFile(document.storagePath);
+    const buffer = await readDocumentFileBuffer(document);
     const result = await ocrClient.runOcrOnFile({
       buffer,
       filename: document.originalName,
@@ -312,13 +361,13 @@ export const exportDocumentById = async (id, format) => {
 };
 
 export const getDocumentFile = async (id) => {
-  const document = await documentRepository.findDocumentById(id);
+  const document = await documentRepository.findDocumentByIdWithFile(id);
 
   if (!document) {
     throw new ApiError(404, 'Document not found');
   }
 
-  const buffer = await readStoredFile(document.storagePath);
+  const buffer = await readDocumentFileBuffer(document);
 
   return {
     document: formatDocument(document, { includeText: false, includeParsed: false }),
@@ -329,13 +378,16 @@ export const getDocumentFile = async (id) => {
 };
 
 export const deleteDocument = async (id) => {
-  const document = await documentRepository.findDocumentById(id);
+  const document = await documentRepository.findDocumentByIdWithFile(id);
 
   if (!document) {
     throw new ApiError(404, 'Document not found');
   }
 
-  await deleteStoredFile(document.storagePath);
+  if (isDiskStoragePath(document.storagePath)) {
+    await deleteStoredFile(document.storagePath);
+  }
+
   await documentRepository.deleteDocumentById(id);
 
   return { id };

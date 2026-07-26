@@ -40,6 +40,13 @@ OCR_SERVICE_URL=http://127.0.0.1:5100
 
 - Root Directory: `ocr-service`
 - `runtime.txt` pins Python **3.12.8** (required for PaddleOCR)
+- **Instance RAM:** use **at least 1 GB**. Free 512 MB often returns empty HTTP 502 (OOM) during OCR.
+- Env (recommended):
+
+```env
+OCR_LOW_MEMORY=true
+```
+
 - Build Command:
 
 ```bash
@@ -49,7 +56,7 @@ pip install --upgrade pip setuptools wheel && pip install paddlepaddle==3.0.0 -i
 - Start Command:
 
 ```bash
-uvicorn app:app --host 0.0.0.0 --port $PORT
+uvicorn app:app --host 0.0.0.0 --port $PORT --workers 1
 ```
 
 - Health check: `GET /health` (expect `"paddleocr": true`)

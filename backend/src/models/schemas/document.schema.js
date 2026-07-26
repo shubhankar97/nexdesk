@@ -27,8 +27,15 @@ export const documentSchema = new mongoose.Schema(
     },
     storagePath: {
       type: String,
-      required: true,
+      required: false,
       trim: true,
+      default: null,
+    },
+    // Binary file content (BinData). Excluded from queries by default.
+    fileData: {
+      type: Buffer,
+      select: false,
+      default: undefined,
     },
     status: {
       type: String,
