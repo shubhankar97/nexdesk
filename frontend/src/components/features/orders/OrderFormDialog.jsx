@@ -83,7 +83,7 @@ const OrderFormDialog = ({
           )}
           {customers.map((customer) => (
             <MenuItem key={customer.id} value={String(customer.id)}>
-              {customer.email}
+              {customer.name ? `${customer.name} (${customer.email})` : customer.email}
             </MenuItem>
           ))}
         </Select>

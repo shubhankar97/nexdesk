@@ -10,27 +10,54 @@ export const validateCustomerId = (params) => {
   return customerId;
 };
 
+export const validateMasterCustomerParams = (params) => {
+  const tenantId = params?.tenantId?.trim();
+  const customerId = params?.customerId?.trim();
+
+  if (!tenantId) {
+    throw new ApiError(400, 'Tenant ID is required');
+  }
+
+  if (!customerId) {
+    throw new ApiError(400, 'Customer ID is required');
+  }
+
+  return { tenantId, customerId };
+};
+
 export const validateCreateCustomer = (body) => {
-  const { email, password, isActive } = body ?? {};
+  const { name, email, mobile } = body ?? {};
+
+  if (!name?.trim()) {
+    throw new ApiError(400, 'Name is required');
+  }
 
   if (!email?.trim()) {
     throw new ApiError(400, 'Email is required');
   }
 
-  if (!password || typeof password !== 'string' || password.length < 8) {
-    throw new ApiError(400, 'Password must be at least 8 characters');
+  if (!mobile?.trim()) {
+    throw new ApiError(400, 'Mobile is required');
   }
 
   return {
+    name: name.trim(),
     email: email.trim().toLowerCase(),
-    password,
-    isActive: isActive !== false,
+    mobile: mobile.trim(),
   };
 };
 
 export const validateUpdateCustomer = (body) => {
-  const { email, password, isActive } = body ?? {};
+  const { name, email, mobile } = body ?? {};
   const payload = {};
+
+  if (name !== undefined) {
+    if (!name?.trim()) {
+      throw new ApiError(400, 'Name cannot be empty');
+    }
+
+    payload.name = name.trim();
+  }
 
   if (email !== undefined) {
     if (!email?.trim()) {
@@ -38,6 +65,49 @@ export const validateUpdateCustomer = (body) => {
     }
 
     payload.email = email.trim().toLowerCase();
+  }
+
+  if (mobile !== undefined) {
+    if (!mobile?.trim()) {
+      throw new ApiError(400, 'Mobile cannot be empty');
+    }
+
+    payload.mobile = mobile.trim();
+  }
+
+  if (!Object.keys(payload).length) {
+    throw new ApiError(400, 'No valid fields to update');
+  }
+
+  return payload;
+};
+
+export const validateMasterUpdateCustomer = (body) => {
+  const { name, email, mobile, password, isActive } = body ?? {};
+  const payload = {};
+
+  if (name !== undefined) {
+    if (!name?.trim()) {
+      throw new ApiError(400, 'Name cannot be empty');
+    }
+
+    payload.name = name.trim();
+  }
+
+  if (email !== undefined) {
+    if (!email?.trim()) {
+      throw new ApiError(400, 'Email cannot be empty');
+    }
+
+    payload.email = email.trim().toLowerCase();
+  }
+
+  if (mobile !== undefined) {
+    if (!mobile?.trim()) {
+      throw new ApiError(400, 'Mobile cannot be empty');
+    }
+
+    payload.mobile = mobile.trim();
   }
 
   if (password !== undefined) {
@@ -50,6 +120,10 @@ export const validateUpdateCustomer = (body) => {
 
   if (isActive !== undefined) {
     payload.isActive = Boolean(isActive);
+  }
+
+  if (payload.isActive === true && !payload.password) {
+    throw new ApiError(400, 'Password is required to activate a customer');
   }
 
   if (!Object.keys(payload).length) {

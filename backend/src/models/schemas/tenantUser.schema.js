@@ -6,6 +6,11 @@ const TENANT_ROLES = [ROLES.ADMIN, ROLES.CUSTOMER];
 
 export const tenantUserSchema = new mongoose.Schema(
   {
+    name: {
+      type: String,
+      trim: true,
+      default: '',
+    },
     email: {
       type: String,
       required: true,
@@ -13,9 +18,14 @@ export const tenantUserSchema = new mongoose.Schema(
       lowercase: true,
       trim: true,
     },
+    mobile: {
+      type: String,
+      trim: true,
+      default: '',
+    },
     password: {
       type: String,
-      required: true,
+      required: false,
       select: false,
     },
     role: {
@@ -44,7 +54,7 @@ export const tenantUserSchema = new mongoose.Schema(
 );
 
 tenantUserSchema.pre('save', async function hashPassword(next) {
-  if (!this.isModified('password')) {
+  if (!this.isModified('password') || !this.password) {
     return next();
   }
 
@@ -53,13 +63,19 @@ tenantUserSchema.pre('save', async function hashPassword(next) {
 });
 
 tenantUserSchema.methods.comparePassword = function comparePassword(candidate) {
+  if (!this.password) {
+    return Promise.resolve(false);
+  }
+
   return bcrypt.compare(candidate, this.password);
 };
 
 tenantUserSchema.methods.toSafeObject = function toSafeObject(tenantId = null) {
   return {
     id: this._id,
+    name: this.name || '',
     email: this.email,
+    mobile: this.mobile || '',
     role: this.role,
     tenantId,
     isActive: this.isActive,

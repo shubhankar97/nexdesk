@@ -31,6 +31,21 @@ const parseJsonResponse = async (response) => {
   }
 };
 
+const buildOcrFormData = ({ buffer, filename, mimeType, preprocess }) => {
+  const form = new FormData();
+  const type = mimeType || 'application/octet-stream';
+  const name = filename || 'document';
+  const bytes = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+
+  // Prefer Blob + filename so python-multipart reliably receives content from Node fetch.
+  const blob = new Blob([bytes], { type });
+  form.append('file', blob, name);
+  form.append('mimeType', mimeType || '');
+  form.append('preprocess', preprocess ? 'true' : 'false');
+
+  return { form, byteLength: bytes.length };
+};
+
 export const isOcrServiceConfigured = () => Boolean(env.ocrServiceUrl);
 
 export const checkOcrHealth = async () => {
@@ -56,6 +71,10 @@ export const runOcrOnFile = async ({ buffer, filename, mimeType, preprocess = tr
     throw new ApiError(503, 'OCR service is not configured (set OCR_SERVICE_URL)');
   }
 
+  if (!buffer || !buffer.length) {
+    throw new ApiError(400, 'Stored document file is empty');
+  }
+
   const health = await checkOcrHealth();
   if (!health?.ok) {
     throw new ApiError(503, `OCR service unhealthy: ${health?.error || 'unknown error'}`);
@@ -67,18 +86,7 @@ export const runOcrOnFile = async ({ buffer, filename, mimeType, preprocess = tr
     );
   }
 
-  const form = new FormData();
-  const type = mimeType || 'application/octet-stream';
-  const name = filename || 'document';
-  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
-  const filePart =
-    typeof File !== 'undefined'
-      ? new File([bytes], name, { type })
-      : new Blob([bytes], { type });
-
-  form.append('file', filePart, name);
-  form.append('mimeType', mimeType || '');
-  form.append('preprocess', String(Boolean(preprocess)));
+  const { form, byteLength } = buildOcrFormData({ buffer, filename, mimeType, preprocess });
 
   let response;
   try {
@@ -96,7 +104,19 @@ export const runOcrOnFile = async ({ buffer, filename, mimeType, preprocess = tr
   if (!response.ok) {
     const detail = payload?.detail || payload?.message || 'OCR processing failed';
     const message = typeof detail === 'string' ? detail : JSON.stringify(detail);
-    throw new ApiError(response.status >= 400 && response.status < 600 ? response.status : 502, message);
+
+    // Surface OCR rejection clearly (e.g. Empty file / Unsupported file type).
+    if (response.status === 400) {
+      throw new ApiError(
+        400,
+        `OCR rejected the file (${byteLength} bytes sent): ${message}`
+      );
+    }
+
+    throw new ApiError(
+      response.status >= 400 && response.status < 600 ? response.status : 502,
+      message
+    );
   }
 
   return {

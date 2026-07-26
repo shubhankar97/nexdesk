@@ -1,22 +1,17 @@
-import { useState } from 'react';
-import AddIcon from '@mui/icons-material/Add';
+import { useCallback, useEffect, useState } from 'react';
 import DeleteIcon from '@mui/icons-material/Delete';
-import EditIcon from '@mui/icons-material/Edit';
+import LockOpenIcon from '@mui/icons-material/LockOpen';
 import {
+  Alert,
   Box,
   Button,
   Chip,
+  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
-  FormControl,
-  FormControlLabel,
   IconButton,
-  InputLabel,
-  MenuItem,
-  Select,
-  Switch,
   Table,
   TableBody,
   TableCell,
@@ -29,87 +24,93 @@ import {
 } from '@mui/material';
 import AdminPage from '../../components/layout/AdminPage.jsx';
 import ConfirmDialog from '../../components/master/ConfirmDialog.jsx';
-import { useMasterData } from '../../context/MasterDataContext.jsx';
-
-const emptyForm = {
-  name: '',
-  email: '',
-  isActive: true,
-  tenantId: '',
-};
+import * as customerService from '../../services/customer.service.js';
 
 const CustomersPage = () => {
-  const {
-    customers,
-    tenants,
-    getTenantById,
-    getAdminById,
-    addCustomer,
-    updateCustomer,
-    deleteCustomer,
-  } = useMasterData();
-
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [customers, setCustomers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState(null);
-  const [editingId, setEditingId] = useState(null);
-  const [form, setForm] = useState(emptyForm);
+  const [activateTarget, setActivateTarget] = useState(null);
+  const [password, setPassword] = useState('');
   const [formError, setFormError] = useState('');
+  const [saving, setSaving] = useState(false);
 
-  const openCreateDialog = () => {
-    setEditingId(null);
-    setForm(emptyForm);
+  const loadCustomers = useCallback(async () => {
+    setLoading(true);
+    setError('');
+
+    try {
+      const data = await customerService.listAllCustomers();
+      setCustomers(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to load customers.');
+      setCustomers([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadCustomers();
+  }, [loadCustomers]);
+
+  const openActivateDialog = (customer) => {
+    setActivateTarget(customer);
+    setPassword('');
     setFormError('');
-    setDialogOpen(true);
   };
 
-  const openEditDialog = (customer) => {
-    setEditingId(customer.id);
-    setForm({
-      name: customer.name,
-      email: customer.email,
-      isActive: customer.isActive,
-      tenantId: customer.tenantId,
-    });
-    setFormError('');
-    setDialogOpen(true);
-  };
-
-  const handleSave = () => {
-    if (!form.name.trim() || !form.email.trim() || !form.tenantId) {
-      setFormError('Name, email, and tenant are required.');
+  const handleActivate = async () => {
+    if (!activateTarget) {
       return;
     }
 
-    const emailTaken = customers.some(
-      (customer) =>
-        customer.email.toLowerCase() === form.email.trim().toLowerCase() &&
-        customer.id !== editingId
-    );
-
-    if (emailTaken) {
-      setFormError('This email is already in use.');
+    if (!password.trim() || password.trim().length < 8) {
+      setFormError('Password must be at least 8 characters.');
       return;
     }
 
-    const payload = {
-      name: form.name.trim(),
-      email: form.email.trim().toLowerCase(),
-      isActive: form.isActive,
-      tenantId: form.tenantId,
-    };
+    setSaving(true);
+    setFormError('');
 
-    if (editingId) {
-      updateCustomer(editingId, payload);
-    } else {
-      addCustomer(payload);
+    try {
+      await customerService.updateCustomerForMaster(activateTarget.tenantId, activateTarget.id, {
+        password: password.trim(),
+        isActive: true,
+      });
+      setActivateTarget(null);
+      setPassword('');
+      await loadCustomers();
+    } catch (err) {
+      setFormError(err.response?.data?.message || 'Failed to activate customer.');
+    } finally {
+      setSaving(false);
     }
-
-    setDialogOpen(false);
   };
 
-  const handleDelete = () => {
-    if (deleteTarget) {
-      deleteCustomer(deleteTarget.id);
+  const handleDeactivate = async (customer) => {
+    try {
+      await customerService.updateCustomerForMaster(customer.tenantId, customer.id, {
+        isActive: false,
+      });
+      await loadCustomers();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to deactivate customer.');
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) {
+      return;
+    }
+
+    try {
+      await customerService.deleteCustomerForMaster(deleteTarget.tenantId, deleteTarget.id);
+      setDeleteTarget(null);
+      await loadCustomers();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to delete customer.');
       setDeleteTarget(null);
     }
   };
@@ -117,46 +118,47 @@ const CustomersPage = () => {
   return (
     <AdminPage
       title="Customers"
-      description="Manage customer users. Each customer belongs to a tenant under an admin."
+      description="View customers created by admins. Activate inactive users by setting a password."
     >
-      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={openCreateDialog}>
-          Add Customer
-        </Button>
-      </Box>
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
+          {error}
+        </Alert>
+      )}
 
-      <TableContainer>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>Name</TableCell>
-              <TableCell>Email</TableCell>
-              <TableCell>Tenant</TableCell>
-              <TableCell>Admin</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell align="right">Actions</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {customers.length === 0 ? (
+      {loading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
+          <CircularProgress />
+        </Box>
+      ) : (
+        <TableContainer>
+          <Table>
+            <TableHead>
               <TableRow>
-                <TableCell colSpan={6}>
-                  <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 3 }}>
-                    No customers yet. Add a customer and assign them to a tenant.
-                  </Typography>
-                </TableCell>
+                <TableCell>Name</TableCell>
+                <TableCell>Email</TableCell>
+                <TableCell>Mobile</TableCell>
+                <TableCell>Tenant</TableCell>
+                <TableCell>Status</TableCell>
+                <TableCell align="right">Actions</TableCell>
               </TableRow>
-            ) : (
-              customers.map((customer) => {
-                const tenant = getTenantById(customer.tenantId);
-                const admin = tenant ? getAdminById(tenant.adminId) : null;
-
-                return (
-                  <TableRow key={customer.id} hover>
-                    <TableCell>{customer.name}</TableCell>
+            </TableHead>
+            <TableBody>
+              {customers.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6}>
+                    <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 3 }}>
+                      No customers yet. Admins create inactive customer profiles from their dashboard.
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                customers.map((customer) => (
+                  <TableRow key={`${customer.tenantId}-${customer.id}`} hover>
+                    <TableCell>{customer.name || '—'}</TableCell>
                     <TableCell>{customer.email}</TableCell>
-                    <TableCell>{tenant ? tenant.companyName : '—'}</TableCell>
-                    <TableCell>{admin ? admin.name : '—'}</TableCell>
+                    <TableCell>{customer.mobile || '—'}</TableCell>
+                    <TableCell>{customer.tenantName || customer.tenantId || '—'}</TableCell>
                     <TableCell>
                       <Chip
                         label={customer.isActive ? 'Active' : 'Inactive'}
@@ -165,11 +167,23 @@ const CustomersPage = () => {
                       />
                     </TableCell>
                     <TableCell align="right">
-                      <Tooltip title="Edit">
-                        <IconButton size="small" onClick={() => openEditDialog(customer)}>
-                          <EditIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
+                      {customer.isActive ? (
+                        <Tooltip title="Deactivate">
+                          <Button size="small" onClick={() => handleDeactivate(customer)}>
+                            Deactivate
+                          </Button>
+                        </Tooltip>
+                      ) : (
+                        <Tooltip title="Activate">
+                          <IconButton
+                            size="small"
+                            color="primary"
+                            onClick={() => openActivateDialog(customer)}
+                          >
+                            <LockOpenIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      )}
                       <Tooltip title="Delete">
                         <IconButton
                           size="small"
@@ -181,58 +195,35 @@ const CustomersPage = () => {
                       </Tooltip>
                     </TableCell>
                   </TableRow>
-                );
-              })
-            )}
-          </TableBody>
-        </Table>
-      </TableContainer>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
 
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>{editingId ? 'Edit Customer' : 'Add Customer'}</DialogTitle>
+      <Dialog
+        open={Boolean(activateTarget)}
+        onClose={() => !saving && setActivateTarget(null)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Activate Customer</DialogTitle>
         <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1, mt: 0.5 }}>
+            Set a password to activate{' '}
+            <strong>{activateTarget?.name || activateTarget?.email}</strong>.
+          </Typography>
           <TextField
             autoFocus
             margin="dense"
-            label="Name"
+            label="New Password"
+            type="password"
             fullWidth
             required
-            value={form.name}
-            onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
-          />
-          <TextField
-            margin="dense"
-            label="Email"
-            type="email"
-            fullWidth
-            required
-            value={form.email}
-            onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))}
-          />
-          <FormControl fullWidth margin="dense" required>
-            <InputLabel id="customer-tenant-label">Tenant</InputLabel>
-            <Select
-              labelId="customer-tenant-label"
-              label="Tenant"
-              value={form.tenantId}
-              onChange={(event) => setForm((prev) => ({ ...prev, tenantId: event.target.value }))}
-            >
-              {tenants.map((tenant) => (
-                <MenuItem key={tenant.id} value={tenant.id}>
-                  {tenant.companyName}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          <FormControlLabel
-            control={
-              <Switch
-                checked={form.isActive}
-                onChange={(event) => setForm((prev) => ({ ...prev, isActive: event.target.checked }))}
-              />
-            }
-            label="Active"
-            sx={{ mt: 1 }}
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            helperText="Minimum 8 characters"
           />
           {formError && (
             <Typography variant="body2" color="error" sx={{ mt: 1 }}>
@@ -241,9 +232,11 @@ const CustomersPage = () => {
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
-          <Button onClick={handleSave} variant="contained">
-            {editingId ? 'Save' : 'Add'}
+          <Button onClick={() => setActivateTarget(null)} disabled={saving}>
+            Cancel
+          </Button>
+          <Button onClick={handleActivate} variant="contained" disabled={saving}>
+            {saving ? 'Activating...' : 'Activate'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -251,7 +244,11 @@ const CustomersPage = () => {
       <ConfirmDialog
         open={Boolean(deleteTarget)}
         title="Delete Customer"
-        message={deleteTarget ? `Delete "${deleteTarget.name}"?` : ''}
+        message={
+          deleteTarget
+            ? `Delete "${deleteTarget.name || deleteTarget.email}"? Customers with linked orders cannot be deleted.`
+            : ''
+        }
         onClose={() => setDeleteTarget(null)}
         onConfirm={handleDelete}
       />

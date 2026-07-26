@@ -30,7 +30,6 @@ const validateCustomer = async (customerId) => {
   const customer = await models.User.findOne({
     _id: customerId,
     role: ROLES.CUSTOMER,
-    isActive: true,
   });
 
   if (!customer) {
@@ -47,12 +46,13 @@ export const listOrderCustomers = async () => {
     throw new ApiError(400, 'Tenant context required');
   }
 
-  const customers = await models.User.find({ role: ROLES.CUSTOMER, isActive: true })
-    .select('email')
+  const customers = await models.User.find({ role: ROLES.CUSTOMER })
+    .select('name email')
     .sort({ email: 1 });
 
   return customers.map((customer) => ({
     id: customer._id.toString(),
+    name: customer.name || '',
     email: customer.email,
   }));
 };

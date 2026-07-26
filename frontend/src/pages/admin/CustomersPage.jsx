@@ -12,9 +12,7 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  FormControlLabel,
   IconButton,
-  Switch,
   Table,
   TableBody,
   TableCell,
@@ -30,9 +28,9 @@ import ConfirmDialog from '../../components/master/ConfirmDialog.jsx';
 import * as customerService from '../../services/customer.service.js';
 
 const emptyForm = {
+  name: '',
   email: '',
-  password: '',
-  isActive: true,
+  mobile: '',
 };
 
 const formatDate = (value) => {
@@ -84,27 +82,17 @@ const CustomersPage = () => {
   const openEditDialog = (customer) => {
     setEditingCustomer(customer);
     setForm({
+      name: customer.name || '',
       email: customer.email,
-      password: '',
-      isActive: customer.isActive,
+      mobile: customer.mobile || '',
     });
     setFormError('');
     setDialogOpen(true);
   };
 
   const handleSave = async () => {
-    if (!form.email.trim()) {
-      setFormError('Email is required.');
-      return;
-    }
-
-    if (!editingCustomer && !form.password.trim()) {
-      setFormError('Password is required for new customers.');
-      return;
-    }
-
-    if (form.password.trim() && form.password.trim().length < 8) {
-      setFormError('Password must be at least 8 characters.');
+    if (!form.name.trim() || !form.email.trim() || !form.mobile.trim()) {
+      setFormError('Name, email, and mobile are required.');
       return;
     }
 
@@ -112,23 +100,16 @@ const CustomersPage = () => {
     setFormError('');
 
     try {
+      const payload = {
+        name: form.name.trim(),
+        email: form.email.trim().toLowerCase(),
+        mobile: form.mobile.trim(),
+      };
+
       if (editingCustomer) {
-        const payload = {
-          email: form.email.trim().toLowerCase(),
-          isActive: form.isActive,
-        };
-
-        if (form.password.trim()) {
-          payload.password = form.password;
-        }
-
         await customerService.updateCustomer(editingCustomer.id, payload);
       } else {
-        await customerService.createCustomer({
-          email: form.email.trim().toLowerCase(),
-          password: form.password,
-          isActive: form.isActive,
-        });
+        await customerService.createCustomer(payload);
       }
 
       setDialogOpen(false);
@@ -156,7 +137,10 @@ const CustomersPage = () => {
   };
 
   return (
-    <AdminPage title="Customers" description="Browse and manage your customer base.">
+    <AdminPage
+      title="Customers"
+      description="Create inactive customer profiles. Master activates them with a password."
+    >
       {error && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
           {error}
@@ -178,7 +162,9 @@ const CustomersPage = () => {
           <Table>
             <TableHead>
               <TableRow>
+                <TableCell>Name</TableCell>
                 <TableCell>Email</TableCell>
+                <TableCell>Mobile</TableCell>
                 <TableCell>Status</TableCell>
                 <TableCell>Created</TableCell>
                 <TableCell align="right">Actions</TableCell>
@@ -187,7 +173,7 @@ const CustomersPage = () => {
             <TableBody>
               {customers.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4}>
+                  <TableCell colSpan={6}>
                     <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 3 }}>
                       No customers yet. Add a customer to assign orders.
                     </Typography>
@@ -196,7 +182,9 @@ const CustomersPage = () => {
               ) : (
                 customers.map((customer) => (
                   <TableRow key={customer.id} hover>
+                    <TableCell>{customer.name || '—'}</TableCell>
                     <TableCell>{customer.email}</TableCell>
+                    <TableCell>{customer.mobile || '—'}</TableCell>
                     <TableCell>
                       <Chip
                         label={customer.isActive ? 'Active' : 'Inactive'}
@@ -232,8 +220,21 @@ const CustomersPage = () => {
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{editingCustomer ? 'Edit Customer' : 'Add Customer'}</DialogTitle>
         <DialogContent>
+          {!editingCustomer && (
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1, mt: 0.5 }}>
+              New customers are created as inactive. Master will activate them with a password.
+            </Typography>
+          )}
           <TextField
             autoFocus
+            margin="dense"
+            label="Name"
+            fullWidth
+            required
+            value={form.name}
+            onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
+          />
+          <TextField
             margin="dense"
             label="Email"
             type="email"
@@ -244,27 +245,11 @@ const CustomersPage = () => {
           />
           <TextField
             margin="dense"
-            label={editingCustomer ? 'New Password (optional)' : 'Password'}
-            type="password"
+            label="Mobile"
             fullWidth
-            required={!editingCustomer}
-            value={form.password}
-            onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
-            helperText={
-              editingCustomer ? 'Leave blank to keep current password' : 'Minimum 8 characters'
-            }
-          />
-          <FormControlLabel
-            control={
-              <Switch
-                checked={form.isActive}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, isActive: event.target.checked }))
-                }
-              />
-            }
-            label="Active"
-            sx={{ mt: 1 }}
+            required
+            value={form.mobile}
+            onChange={(event) => setForm((prev) => ({ ...prev, mobile: event.target.value }))}
           />
           {formError && (
             <Typography variant="body2" color="error" sx={{ mt: 1 }}>
@@ -287,7 +272,7 @@ const CustomersPage = () => {
         title="Delete Customer"
         message={
           deleteTarget
-            ? `Delete "${deleteTarget.email}"? Customers with linked orders cannot be deleted.`
+            ? `Delete "${deleteTarget.name || deleteTarget.email}"? Customers with linked orders cannot be deleted.`
             : ''
         }
         onClose={() => setDeleteTarget(null)}
