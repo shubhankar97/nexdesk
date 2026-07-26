@@ -405,6 +405,16 @@ def process_pdf_bytes(content: bytes, preprocess: bool = True) -> dict[str, Any]
     }
 
 
+@app.get("/")
+def root() -> dict[str, Any]:
+    return {
+        "ok": True,
+        "service": "nexdesk-ocr",
+        "health": "/health",
+        "ocr": "POST /ocr",
+    }
+
+
 @app.get("/health")
 def health() -> dict[str, Any]:
     paddle_ready = False
