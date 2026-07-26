@@ -1,6 +1,8 @@
 # Use Python 3.10–3.12 only (not 3.13/3.14).
 # Install paddlepaddle first, e.g.:
 #   python -m pip install paddlepaddle==3.0.0 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
+setuptools>=69.0.0
+wheel
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 python-multipart==0.0.20

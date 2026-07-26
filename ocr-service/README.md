@@ -36,6 +36,24 @@ Set on the Node API:
 OCR_SERVICE_URL=http://127.0.0.1:5100
 ```
 
+## Render
+
+- Root Directory: `ocr-service`
+- `runtime.txt` pins Python **3.12.8** (required for PaddleOCR)
+- Build Command:
+
+```bash
+pip install --upgrade pip setuptools wheel && pip install paddlepaddle==3.0.0 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/ && pip install -r requirements.txt
+```
+
+- Start Command:
+
+```bash
+uvicorn app:app --host 0.0.0.0 --port $PORT
+```
+
+- Health check: `GET /health` (expect `"paddleocr": true`)
+
 ## Endpoints
 
 - `GET /health` — service + PaddleOCR readiness
