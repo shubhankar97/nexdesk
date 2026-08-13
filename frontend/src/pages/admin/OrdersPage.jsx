@@ -28,11 +28,13 @@ import {
 import * as orderService from '../../services/order.service.js';
 import { useAppDispatch } from '../../hooks/useAppDispatch.js';
 import { useAppSelector } from '../../hooks/useAppSelector.js';
-import { toDateInputValue } from '../../utils/order.js';
+import { VALIDITY_DURATION_OPTIONS } from '../../constants/order.js';
+import { computeValidityDates, toDateInputValue } from '../../utils/order.js';
 
 const emptyForm = {
   certificateName: '',
   issueDate: '',
+  duration: '',
   validity: '',
   nextRenewal: '',
   customer: '',
@@ -87,6 +89,7 @@ const OrdersPage = () => {
     setForm({
       certificateName: order.certificateName,
       issueDate: toDateInputValue(order.issueDate),
+      duration: '',
       validity: toDateInputValue(order.validity),
       nextRenewal: toDateInputValue(order.nextRenewal),
       customer: order.customer?.id || order.customer || '',
@@ -97,7 +100,23 @@ const OrdersPage = () => {
   };
 
   const handleFormChange = (field, value) => {
-    setForm((current) => ({ ...current, [field]: value }));
+    setForm((current) => {
+      const next = { ...current, [field]: value };
+
+      if (field === 'issueDate' || field === 'duration') {
+        const issueDate = field === 'issueDate' ? value : next.issueDate;
+        const duration = field === 'duration' ? value : next.duration;
+        const option = VALIDITY_DURATION_OPTIONS.find((item) => item.value === duration);
+
+        if (issueDate && option) {
+          const dates = computeValidityDates(issueDate, option.months);
+          next.validity = dates.validity;
+          next.nextRenewal = dates.nextRenewal;
+        }
+      }
+
+      return next;
+    });
   };
 
   const handleUploadChange = (field, value) => {
@@ -107,7 +126,14 @@ const OrdersPage = () => {
   const handleSaveOrder = async () => {
     setFormError('');
 
-    if (!form.certificateName.trim() || !form.issueDate || !form.validity || !form.nextRenewal || !form.customer) {
+    if (
+      !form.certificateName.trim() ||
+      !form.issueDate ||
+      !form.validity ||
+      !form.nextRenewal ||
+      !form.customer ||
+      (!editingOrder && !form.duration)
+    ) {
       setFormError('All fields are required.');
       return;
     }
@@ -244,6 +270,7 @@ const OrdersPage = () => {
         customersLoading={customersLoading}
         saving={saving}
         error={formError}
+        requireDuration={!editingOrder}
         onClose={() => setFormOpen(false)}
         onChange={handleFormChange}
         onSubmit={handleSaveOrder}

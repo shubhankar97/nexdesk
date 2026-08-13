@@ -10,6 +10,7 @@ import {
   Select,
   TextField,
 } from '@mui/material';
+import { VALIDITY_DURATION_OPTIONS } from '../../../constants/order.js';
 
 const OrderFormDialog = ({
   open,
@@ -19,6 +20,7 @@ const OrderFormDialog = ({
   customersLoading,
   saving,
   error,
+  requireDuration = true,
   onClose,
   onChange,
   onSubmit,
@@ -43,6 +45,21 @@ const OrderFormDialog = ({
         fullWidth
         InputLabelProps={{ shrink: true }}
       />
+      <FormControl fullWidth required={requireDuration}>
+        <InputLabel id="order-duration-label">Duration</InputLabel>
+        <Select
+          labelId="order-duration-label"
+          label="Duration"
+          value={form.duration}
+          onChange={(event) => onChange('duration', event.target.value)}
+        >
+          {VALIDITY_DURATION_OPTIONS.map((option) => (
+            <MenuItem key={option.value} value={option.value}>
+              {option.label}
+            </MenuItem>
+          ))}
+        </Select>
+      </FormControl>
       <TextField
         label="Validity"
         type="date"
@@ -51,6 +68,7 @@ const OrderFormDialog = ({
         required
         fullWidth
         InputLabelProps={{ shrink: true }}
+        helperText={form.duration ? 'Auto-filled from issue date + duration' : undefined}
       />
       <TextField
         label="Next Renewal"
@@ -60,6 +78,7 @@ const OrderFormDialog = ({
         required
         fullWidth
         InputLabelProps={{ shrink: true }}
+        helperText={form.duration ? 'Auto-filled from issue date + duration' : undefined}
       />
       <FormControl fullWidth required>
         <InputLabel id="order-customer-label">Customer</InputLabel>
